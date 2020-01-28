@@ -1,3 +1,6 @@
+const ARITHMETIC_OPERATORS: &'static str = "+-*/";
+const COMPARISON_OPERATORS: &'static str = "<>=";
+
 /// Enumeration of all types of token.
 #[derive(Clone, Eq, PartialEq, Debug)]
 enum TokenType {
@@ -92,6 +95,8 @@ impl Lexer<'_> {
         match self.iter.peek() {
             Some(character) if character.is_ascii_alphabetic() => self.recognize_identifier(),
             Some('(') | Some(')') => self.recognize_parenthesis(),
+            Some(&op) if ARITHMETIC_OPERATORS.contains(op) => self.recognize_arithmetic_operator(),
+            Some(&op) if COMPARISON_OPERATORS.contains(op) => self.recognize_comparison_operator(),
             Some(_) => Err(String::from("Error")),
             None => Err(String::from("Missing expected character in input.")),
         }
@@ -166,6 +171,55 @@ impl Lexer<'_> {
             line,
             column,
         })
+    }
+
+    fn recognize_arithmetic_operator(&mut self) -> Result<Token, String> {
+        let line = self.line;
+        let column = self.column;
+
+        let character = self.iter.next().ok_or("Expected parenthesis in input.")?;
+
+        self.position += 1;
+        self.column += 1;
+
+        let value = character.to_string();
+
+        Ok(Token {
+            ttype: Self::match_token_type(&value)?,
+            value,
+            line,
+            column,
+        })
+    }
+
+    fn recognize_comparison_operator(&mut self) -> Result<Token, String> {
+        Err("WIP".to_string())
+    }
+
+    fn match_token_type(value: &str) -> Result<TokenType, String> {
+        match value {
+            // Arithmetic operators
+            "+" => Ok(TokenType::Plus),
+            "-" => Ok(TokenType::Minus),
+            "*" => Ok(TokenType::Times),
+            "/" => Ok(TokenType::Div),
+
+            // Comparison operators
+            ">" => Ok(TokenType::GreaterThan),
+            ">=" => Ok(TokenType::GreaterThanOrEqual),
+            "<" => Ok(TokenType::LessThan),
+            "<=" => Ok(TokenType::LessThanOrEqual),
+            "==" => Ok(TokenType::Equal),
+
+            // Assignment operator
+            "=" => Ok(TokenType::Assign),
+
+            // Parenthesis
+            "(" => Ok(TokenType::LeftParenthesis),
+            ")" => Ok(TokenType::RightParenthesis),
+
+            _ => Err(format!("Operator {} not found in match token type.", value)),
+        }
     }
 }
 
@@ -311,5 +365,41 @@ mod tests {
             ]),
             tokens
         );
+    }
+
+    fn an_operator(op: &str, column: usize) -> (Token, usize) {
+        let ttype = Lexer::match_token_type(op).unwrap();
+        let token = Token {
+            ttype,
+            value: String::from(op),
+            line: 0,
+            column,
+        };
+
+        (token, column + op.len())
+    }
+
+    #[test]
+    fn test_arithmethic_operators() {
+        let ops = ARITHMETIC_OPERATORS
+            .split("")
+            .filter(|op| !op.is_empty())
+            .collect::<Vec<_>>();
+
+        for op in ops.iter() {
+            let mut lexer = Lexer::new(op);
+            let tokens = lexer.all_tokens();
+            let (expected_token, _) = an_operator(op, 0);
+            assert_eq!(Ok(vec![expected_token]), tokens);
+        }
+
+        let mut lexer = Lexer::new(ARITHMETIC_OPERATORS);
+        let tokens = lexer.all_tokens();
+        let expected_tokens = ops
+            .iter()
+            .enumerate()
+            .map(|(i, op)| an_operator(op, i).0)
+            .collect::<Vec<_>>();
+        assert_eq!(Ok(expected_tokens), tokens);
     }
 }
