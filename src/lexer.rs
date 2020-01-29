@@ -1,5 +1,5 @@
-const ARITHMETIC_OPERATORS: &'static str = "+-*/";
-const COMPARISON_OPERATORS: &'static str = "<>=";
+const ARITHMETIC_OPERATORS: &str = "+-*/";
+const COMPARISON_OPERATORS: &str = "=<>";
 
 /// Enumeration of all types of token.
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -64,19 +64,8 @@ pub struct Lexer<'a> {
     column: usize,
 }
 
-impl Token {
-    fn new(ttype: TokenType) -> Self {
-        Token {
-            ttype,
-            value: String::new(),
-            line: 0,
-            column: 0,
-        }
-    }
-}
-
-impl Lexer<'_> {
-    pub fn new(input: &'static str) -> Self {
+impl<'a> Lexer<'a> {
+    pub fn new(input: &'a str) -> Self {
         Lexer {
             input: input.to_string(),
             iter: input.chars().peekable(),
@@ -89,7 +78,12 @@ impl Lexer<'_> {
     // Returns the next recognized 'Token' in the input.
     fn next_token(&mut self) -> Result<Token, String> {
         if self.position >= self.input.len() {
-            return Ok(Token::new(TokenType::EndOfInput));
+            return Ok(Token {
+                ttype: TokenType::EndOfInput,
+                value: String::new(),
+                line: self.line,
+                column: self.column,
+            });
         }
 
         match self.iter.peek() {
@@ -177,7 +171,10 @@ impl Lexer<'_> {
         let line = self.line;
         let column = self.column;
 
-        let character = self.iter.next().ok_or("Expected parenthesis in input.")?;
+        let character = self
+            .iter
+            .next()
+            .ok_or("Expected arithmetic operator in input.")?;
 
         self.position += 1;
         self.column += 1;
@@ -193,7 +190,32 @@ impl Lexer<'_> {
     }
 
     fn recognize_comparison_operator(&mut self) -> Result<Token, String> {
-        Err("WIP".to_string())
+        let line = self.line;
+        let column = self.column;
+
+        let character = self
+            .iter
+            .next()
+            .ok_or("Expected comparison operator in input.")?;
+
+        let value = if let Some('=') = self.iter.peek() {
+            self.iter.next();
+            self.position += 2;
+            self.column += 2;
+            format!("{}=", character)
+        } else {
+            self.position += 1;
+            self.column += 1;
+
+            character.to_string()
+        };
+
+        Ok(Token {
+            ttype: Self::match_token_type(&value)?,
+            value,
+            line,
+            column,
+        })
     }
 
     fn match_token_type(value: &str) -> Result<TokenType, String> {
@@ -401,5 +423,46 @@ mod tests {
             .map(|(i, op)| an_operator(op, i).0)
             .collect::<Vec<_>>();
         assert_eq!(Ok(expected_tokens), tokens);
+    }
+
+    #[test]
+    fn test_comparison_operators() {
+        let ops = {
+            let mut ops = COMPARISON_OPERATORS
+                .split("")
+                .filter(|op| !op.is_empty())
+                .map(|op| op.to_string())
+                .collect::<Vec<_>>();
+
+            let mut eq_ops = ops.iter().map(|op| format!("{}=", op)).collect::<Vec<_>>();
+
+            ops.append(&mut eq_ops);
+
+            ops.clone()
+        };
+
+        for op in ops.iter() {
+            let mut lexer = Lexer::new(op);
+            let tokens = lexer.all_tokens();
+            let (expected_token, _) = an_operator(op, 0);
+            assert_eq!(Ok(vec![expected_token]), tokens);
+        }
+    }
+    #[test]
+    fn test_combination1() {
+        let mut lexer = Lexer::new("=(hello>=<world+");
+        let tokens = lexer.all_tokens();
+        assert_eq!(
+            Ok(vec![
+                an_operator("=", 0).0,
+                left_paren(1),
+                token_for_identifier("hello", 2),
+                an_operator(">=", 7).0,
+                an_operator("<", 9).0,
+                token_for_identifier("world", 10),
+                an_operator("+", 15).0,
+            ]),
+            tokens
+        );
     }
 }
