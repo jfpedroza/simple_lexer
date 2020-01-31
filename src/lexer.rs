@@ -1,3 +1,5 @@
+use crate::number_fsm;
+
 const ARITHMETIC_OPERATORS: &str = "+-*/";
 const COMPARISON_OPERATORS: &str = "=<>";
 
@@ -91,6 +93,7 @@ impl<'a> Lexer<'a> {
             Some('(') | Some(')') => self.recognize_parenthesis(),
             Some(&op) if ARITHMETIC_OPERATORS.contains(op) => self.recognize_arithmetic_operator(),
             Some(&op) if COMPARISON_OPERATORS.contains(op) => self.recognize_comparison_operator(),
+            Some(character) if character.is_digit(10) => self.recognize_number(),
             Some(_) => Err(String::from("Error")),
             None => Err(String::from("Missing expected character in input.")),
         }
@@ -213,6 +216,20 @@ impl<'a> Lexer<'a> {
         Ok(Token {
             ttype: Self::match_token_type(&value)?,
             value,
+            line,
+            column,
+        })
+    }
+
+    fn recognize_number(&mut self) -> Result<Token, String> {
+        let line = self.line;
+        let column = self.column;
+
+        let fsm = number_fsm::build_number_recognizer();
+
+        Ok(Token {
+            ttype: TokenType::Number,
+            value: String::from("hi"),
             line,
             column,
         })
@@ -448,6 +465,7 @@ mod tests {
             assert_eq!(Ok(vec![expected_token]), tokens);
         }
     }
+
     #[test]
     fn test_combination1() {
         let mut lexer = Lexer::new("=(hello>=<world+");
@@ -461,6 +479,56 @@ mod tests {
                 an_operator("<", 9).0,
                 token_for_identifier("world", 10),
                 an_operator("+", 15).0,
+            ]),
+            tokens
+        );
+    }
+
+    fn a_number(num: &str, column: usize) -> (Token, usize) {
+        let token = Token {
+            ttype: TokenType::Number,
+            value: String::from(num),
+            line: 0,
+            column,
+        };
+
+        (token, column + num.len())
+    }
+
+    #[test]
+    fn test_a_single_number() {
+        let numbers = ["5", "2.37", "83e2", "4E57", "91.5e4", "2.83e+3", "3E+7"];
+        for number in numbers.iter() {
+            let mut lexer = Lexer::new(number);
+            let tokens = lexer.all_tokens();
+            let expected_token = a_number(number, 0).0;
+            assert_eq!(Ok(vec![expected_token]), tokens);
+        }
+    }
+
+    #[test]
+    fn test_combination2() {
+        let mut lexer = Lexer::new("pi=3.1416");
+        let tokens = lexer.all_tokens();
+        assert_eq!(
+            Ok(vec![
+                token_for_identifier("pi", 0),
+                an_operator("=", 2).0,
+                a_number("3.1416", 3).0,
+            ]),
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_combination3() {
+        let mut lexer = Lexer::new("3.1416*7");
+        let tokens = lexer.all_tokens();
+        assert_eq!(
+            Ok(vec![
+                a_number("3.1416", 0).0,
+                an_operator("=", 6).0,
+                a_number("7", 7).0,
             ]),
             tokens
         );
