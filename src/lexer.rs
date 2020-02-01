@@ -35,15 +35,14 @@ enum TokenType {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Token {
+pub struct Token<'a> {
     /// - type.   A 'TokenType' corresponding to the type
     ///           of the newly created 'Token'.
     ttype: TokenType,
 
-    // TODO: Store the token value as a String slice
     /// - value.  The 'String' value of the token.
     ///           The actual characters of the lexeme described.
-    value: String,
+    value: &'a str,
 
     /// - line.   The line number where the token
     ///           was encountered in the source code.
@@ -55,7 +54,7 @@ pub struct Token {
 }
 
 pub struct Lexer<'a> {
-    input: String,
+    input: &'a str,
 
     iter: std::iter::Peekable<std::str::Chars<'a>>,
 
@@ -69,7 +68,7 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Lexer {
-            input: input.to_string(),
+            input,
             iter: input.chars().peekable(),
             position: 0,
             line: 0,
@@ -78,14 +77,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Returns the next recognized 'Token' in the input.
-    fn next_token(&mut self) -> Result<Token, String> {
+    fn next_token(&mut self) -> Result<Token<'a>, String> {
         // We skip all the whitespaces and new lines in the input.
         self.skip_whitespaces_and_new_lines();
 
         if self.position >= self.input.len() {
             return Ok(Token {
                 ttype: TokenType::EndOfInput,
-                value: String::new(),
+                value: "",
                 line: self.line,
                 column: self.column,
             });
@@ -126,7 +125,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn all_tokens(&mut self) -> Result<Vec<Token>, String> {
+    pub fn all_tokens(&mut self) -> Result<Vec<Token<'a>>, String> {
         let mut tokens: Vec<Result<Token, String>> = vec![];
         let mut token = self.next_token();
         loop {
@@ -149,39 +148,44 @@ impl<'a> Lexer<'a> {
         tokens.iter().cloned().collect()
     }
 
-    fn recognize_identifier(&mut self) -> Result<Token, String> {
-        let mut identifier = vec![];
+    fn expect_next(&mut self, message: &str) -> Result<char, String> {
+        self.iter.next().ok_or(format!(
+            "Expected {} in input at line {} and column {}.",
+            message, self.line, self.column,
+        ))
+    }
+
+    fn recognize_identifier(&mut self) -> Result<Token<'a>, String> {
+        let mut size = 0;
         let line = self.line;
         let column = self.column;
+        let position = self.position;
 
         while let Some(&character) = self.iter.peek() {
             if character.is_ascii_alphanumeric() || character == '_' {
-                identifier.push(character);
+                size += 1;
                 self.iter.next();
             } else {
                 break;
             }
         }
 
-        self.position += identifier.len();
-        self.column += identifier.len();
+        self.position += size;
+        self.column += size;
 
         Ok(Token {
             ttype: TokenType::Identifier,
-            value: identifier.iter().collect(),
+            value: &self.input[position..position + size],
             line,
             column,
         })
     }
 
-    fn recognize_parenthesis(&mut self) -> Result<Token, String> {
+    fn recognize_parenthesis(&mut self) -> Result<Token<'a>, String> {
         let line = self.line;
         let column = self.column;
 
-        let character = self.iter.next().ok_or(format!(
-            "Expected parenthesis in input at line {} and column {}.",
-            self.line, self.column,
-        ))?;
+        let character = self.expect_next("parenthesis")?;
 
         let (ttype, value) = if character == '(' {
             (TokenType::LeftParenthesis, "(")
@@ -194,69 +198,65 @@ impl<'a> Lexer<'a> {
 
         Ok(Token {
             ttype,
-            value: String::from(value),
+            value: value,
             line,
             column,
         })
     }
 
-    fn recognize_arithmetic_operator(&mut self) -> Result<Token, String> {
+    fn recognize_arithmetic_operator(&mut self) -> Result<Token<'a>, String> {
         let line = self.line;
         let column = self.column;
+        let position = self.position;
 
-        let character = self.iter.next().ok_or(format!(
-            "Expected arithmetic operator in input at line {} and column {}.",
-            self.line, self.column,
-        ))?;
-
+        self.expect_next("arithmetic operator")?;
         self.position += 1;
         self.column += 1;
 
-        let value = character.to_string();
+        let value = &self.input[position..position + 1];
 
         Ok(Token {
-            ttype: Self::match_token_type(&value)?,
+            ttype: Self::match_token_type(value)?,
             value,
             line,
             column,
         })
     }
 
-    fn recognize_comparison_operator(&mut self) -> Result<Token, String> {
+    fn recognize_comparison_operator(&mut self) -> Result<Token<'a>, String> {
         let line = self.line;
         let column = self.column;
+        let position = self.position;
 
-        let character = self.iter.next().ok_or(format!(
-            "Expected comparison operator in input at line {} and column {}.",
-            self.line, self.column,
-        ))?;
+        self.expect_next("comparison operator")?;
 
         let value = if let Some('=') = self.iter.peek() {
             self.iter.next();
             self.position += 2;
             self.column += 2;
-            format!("{}=", character)
+            &self.input[position..position + 2]
         } else {
             self.position += 1;
             self.column += 1;
 
-            character.to_string()
+            &self.input[position..position + 1]
         };
 
         Ok(Token {
-            ttype: Self::match_token_type(&value)?,
+            ttype: Self::match_token_type(value)?,
             value,
             line,
             column,
         })
     }
 
-    fn recognize_number(&mut self) -> Result<Token, String> {
+    fn recognize_number(&mut self) -> Result<Token<'a>, String> {
         let line = self.line;
         let column = self.column;
+        let position = self.position;
 
         let fsm = number_fsm::build_number_recognizer();
-        let fsm_input: String = self.input.chars().skip(self.position).collect();
+        let fsm_input = &self.input[position..];
 
         if let Some(number) = fsm.run(&fsm_input) {
             let size = number.len();
@@ -268,7 +268,7 @@ impl<'a> Lexer<'a> {
 
             Ok(Token {
                 ttype: TokenType::Number,
-                value: number.to_string(),
+                value: number,
                 line,
                 column,
             })
@@ -322,7 +322,7 @@ mod tests {
     fn token_for_identifier(identifier: &str, column: usize) -> Token {
         Token {
             ttype: TokenType::Identifier,
-            value: String::from(identifier),
+            value: identifier,
             line: 0,
             column,
         }
@@ -360,19 +360,19 @@ mod tests {
         assert_eq!(Ok(vec![expected_token]), tokens);
     }
 
-    fn left_paren(column: usize) -> Token {
+    fn left_paren(column: usize) -> Token<'static> {
         Token {
             ttype: TokenType::LeftParenthesis,
-            value: String::from("("),
+            value: "(",
             line: 0,
             column,
         }
     }
 
-    fn right_paren(column: usize) -> Token {
+    fn right_paren(column: usize) -> Token<'static> {
         Token {
             ttype: TokenType::RightParenthesis,
-            value: String::from(")"),
+            value: ")",
             line: 0,
             column,
         }
@@ -455,7 +455,7 @@ mod tests {
         let ttype = Lexer::match_token_type(op).unwrap();
         let token = Token {
             ttype,
-            value: String::from(op),
+            value: op,
             line: 0,
             column,
         };
@@ -532,7 +532,7 @@ mod tests {
     fn a_number(num: &str, column: usize) -> (Token, usize) {
         let token = Token {
             ttype: TokenType::Number,
-            value: String::from(num),
+            value: num,
             line: 0,
             column,
         };
