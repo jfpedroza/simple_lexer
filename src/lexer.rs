@@ -77,8 +77,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    // Returns the next recognized 'Token' in the input.
+    /// Returns the next recognized 'Token' in the input.
     fn next_token(&mut self) -> Result<Token, String> {
+        // We skip all the whitespaces and new lines in the input.
+        self.skip_whitespaces_and_new_lines();
+
         if self.position >= self.input.len() {
             return Ok(Token {
                 ttype: TokenType::EndOfInput,
@@ -102,6 +105,24 @@ impl<'a> Lexer<'a> {
                 "Missing expected character in input at line {} and column {}.",
                 self.line, self.column
             )),
+        }
+    }
+
+    fn skip_whitespaces_and_new_lines(&mut self) {
+        while let Some(&character) = self.iter.peek() {
+            if !character.is_ascii_whitespace() {
+                break;
+            }
+
+            self.iter.next();
+            self.position += 1;
+
+            if character == '\n' {
+                self.line += 1;
+                self.column = 0;
+            } else {
+                self.column += 1;
+            }
         }
     }
 
@@ -157,7 +178,10 @@ impl<'a> Lexer<'a> {
         let line = self.line;
         let column = self.column;
 
-        let character = self.iter.next().ok_or("Expected parenthesis in input.")?;
+        let character = self.iter.next().ok_or(format!(
+            "Expected parenthesis in input at line {} and column {}.",
+            self.line, self.column,
+        ))?;
 
         let (ttype, value) = if character == '(' {
             (TokenType::LeftParenthesis, "(")
@@ -180,10 +204,10 @@ impl<'a> Lexer<'a> {
         let line = self.line;
         let column = self.column;
 
-        let character = self
-            .iter
-            .next()
-            .ok_or("Expected arithmetic operator in input.")?;
+        let character = self.iter.next().ok_or(format!(
+            "Expected arithmetic operator in input at line {} and column {}.",
+            self.line, self.column,
+        ))?;
 
         self.position += 1;
         self.column += 1;
@@ -202,10 +226,10 @@ impl<'a> Lexer<'a> {
         let line = self.line;
         let column = self.column;
 
-        let character = self
-            .iter
-            .next()
-            .ok_or("Expected comparison operator in input.")?;
+        let character = self.iter.next().ok_or(format!(
+            "Expected comparison operator in input at line {} and column {}.",
+            self.line, self.column,
+        ))?;
 
         let value = if let Some('=') = self.iter.peek() {
             self.iter.next();
@@ -564,6 +588,72 @@ mod tests {
                 an_operator("*", 6).0,
                 a_number("7", 7).0,
             ]),
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_whitespaces1() {
+        let mut lexer = Lexer::new("hello ) ( world  ");
+        let tokens = lexer.all_tokens();
+        assert_eq!(
+            Ok(vec![
+                token_for_identifier("hello", 0),
+                right_paren(6),
+                left_paren(8),
+                token_for_identifier("world", 10)
+            ]),
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_whitespaces2() {
+        let mut lexer = Lexer::new(" 3.1416\n*\t7");
+        let tokens = lexer.all_tokens();
+        let (t1, t2, t3) = {
+            let (t1, _col) = a_number("3.1416", 1);
+            let (mut t2, _col) = an_operator("*", 0);
+            let (mut t3, _col) = a_number("7", 2);
+
+            t2.line = 1;
+            t3.line = 1;
+            (t1, t2, t3)
+        };
+
+        assert_eq!(Ok(vec![t1, t2, t3]), tokens);
+    }
+
+    #[test]
+    fn test_error1() {
+        let mut lexer = Lexer::new("invalid_character&");
+        let tokens = lexer.all_tokens();
+        assert_eq!(
+            Err(String::from(
+                "Unrecognized character & at line 0 and column 17."
+            )),
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_error2() {
+        let mut lexer = Lexer::new("var = 3\npi=3.14.");
+        let tokens = lexer.all_tokens();
+        assert_eq!(
+            Err(String::from(
+                "Unrecognized character . at line 1 and column 7."
+            )),
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_error3() {
+        let mut lexer = Lexer::new("var = 3\npi=3.14e+ - 8");
+        let tokens = lexer.all_tokens();
+        assert_eq!(
+            Err(String::from("Invalid number at line 1 and column 3.")),
             tokens
         );
     }
