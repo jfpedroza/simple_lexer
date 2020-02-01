@@ -67,15 +67,45 @@ pub fn build_number_recognizer() -> FSM<NumberFSMState> {
                     '+' | '-' => return Some(BeginNumberWithSignedExponent),
                     _ => (),
                 },
-                BeginNumberWithSignedExponent => {
+                BeginNumberWithSignedExponent | NumberWithExponent => {
                     if character.is_digit(10) {
                         return Some(NumberWithExponent);
                     }
                 }
-                _ => (),
             }
 
             None
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_numbers() {
+        let fsm = build_number_recognizer();
+        let numbers = ["5", "2.37", "83e2", "4E57", "91.5e4", "2.83e+3", "3E+7"];
+        for number in numbers.iter() {
+            assert_eq!(Some(*number), fsm.run(number));
+        }
+    }
+
+    #[test]
+    fn test_valid_number_with_extra_data() {
+        let fsm = build_number_recognizer();
+        let input = "3.1416*2";
+        let number = "3.1416";
+        assert_eq!(Some(number), fsm.run(input));
+    }
+
+    #[test]
+    fn test_invalid_numbers() {
+        let fsm = build_number_recognizer();
+        let numbers = ["l5", "2.", "83e", "4E", "91.e4"];
+        for number in numbers.iter() {
+            assert_eq!(None, fsm.run(number));
+        }
     }
 }

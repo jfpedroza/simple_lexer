@@ -94,8 +94,14 @@ impl<'a> Lexer<'a> {
             Some(&op) if ARITHMETIC_OPERATORS.contains(op) => self.recognize_arithmetic_operator(),
             Some(&op) if COMPARISON_OPERATORS.contains(op) => self.recognize_comparison_operator(),
             Some(character) if character.is_digit(10) => self.recognize_number(),
-            Some(_) => Err(String::from("Error")),
-            None => Err(String::from("Missing expected character in input.")),
+            Some(character) => Err(format!(
+                "Unrecognized character {} at line {} and column {}.",
+                character, self.line, self.column
+            )),
+            None => Err(format!(
+                "Missing expected character in input at line {} and column {}.",
+                self.line, self.column
+            )),
         }
     }
 
@@ -226,13 +232,28 @@ impl<'a> Lexer<'a> {
         let column = self.column;
 
         let fsm = number_fsm::build_number_recognizer();
+        let fsm_input: String = self.input.chars().skip(self.position).collect();
 
-        Ok(Token {
-            ttype: TokenType::Number,
-            value: String::from("hi"),
-            line,
-            column,
-        })
+        if let Some(number) = fsm.run(&fsm_input) {
+            let size = number.len();
+            self.position += size;
+            self.column += size;
+            for _ in 0..size {
+                self.iter.next();
+            }
+
+            Ok(Token {
+                ttype: TokenType::Number,
+                value: number.to_string(),
+                line,
+                column,
+            })
+        } else {
+            Err(format!(
+                "Invalid number at line {} and column {}.",
+                self.line, self.column
+            ))
+        }
     }
 
     fn match_token_type(value: &str) -> Result<TokenType, String> {
@@ -507,6 +528,19 @@ mod tests {
     }
 
     #[test]
+    fn test_invalid_numbers() {
+        let numbers = ["2.", "83e", "4E", "91.e4"];
+        for number in numbers.iter() {
+            let mut lexer = Lexer::new(number);
+            let tokens = lexer.all_tokens();
+            assert_eq!(
+                Err(format!("Invalid number at line 0 and column 0.")),
+                tokens
+            );
+        }
+    }
+
+    #[test]
     fn test_combination2() {
         let mut lexer = Lexer::new("pi=3.1416");
         let tokens = lexer.all_tokens();
@@ -527,7 +561,7 @@ mod tests {
         assert_eq!(
             Ok(vec![
                 a_number("3.1416", 0).0,
-                an_operator("=", 6).0,
+                an_operator("*", 6).0,
                 a_number("7", 7).0,
             ]),
             tokens

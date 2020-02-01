@@ -7,29 +7,31 @@ pub struct FSM<T: std::cmp::Eq + std::hash::Hash> {
     pub next_state: Box<dyn Fn(T, char) -> Option<T>>,
 }
 
-impl<T: Eq + std::hash::Hash + Copy> FSM<T> {
+impl<'a, T: Eq + std::hash::Hash + Copy> FSM<T> {
     /// Runs this FSM on the specified 'input' string.
     /// Returns 'true' if 'input' or a subset of 'input' matches
     /// the regular expression corresponding to this FSM.
-    pub fn run(&self, input: &str) -> bool {
+    pub fn run(&self, input: &'a str) -> Option<&'a str> {
         let mut current_state = self.initial_state;
+        let mut size: usize = 0;
 
         for character in input.chars() {
             let next_state_fn = &self.next_state;
 
             match next_state_fn(current_state, character) {
                 Some(ref next_state) => {
-                    if self.accepting_states.contains(next_state) {
-                        return true;
-                    }
-
+                    size += 1;
                     current_state = *next_state
                 }
-                None => return false,
+                None => break,
             }
         }
 
-        self.accepting_states.contains(&current_state)
+        if self.accepting_states.contains(&current_state) {
+            Some(&input[..size])
+        } else {
+            None
+        }
     }
 }
 
@@ -81,30 +83,35 @@ mod tests {
     #[test]
     fn test_camel_case_identifier() {
         let fsm = identifier_fsm();
-        assert_eq!(fsm.run("camelCaseIdentifier"), true);
+        let input = "camelCaseIdentifier";
+        assert_eq!(Some(input), fsm.run(input));
     }
 
     #[test]
     fn test_snake_case_identifier() {
         let fsm = identifier_fsm();
-        assert_eq!(fsm.run("snake_case_identifier"), true);
+        let input = "snake_case_identifier";
+        assert_eq!(Some(input), fsm.run(input));
     }
 
     #[test]
     fn test_identifier_starting_with_underscore() {
         let fsm = identifier_fsm();
-        assert_eq!(fsm.run("_identifierStartingWithUnderscore"), true);
+        let input = "_identifierStartingWithUnderscore";
+        assert_eq!(Some(input), fsm.run(input));
     }
 
     #[test]
     fn test_identifier_starting_with_digit() {
         let fsm = identifier_fsm();
-        assert_eq!(fsm.run("1dentifier_starting_with_digit"), false);
+        let input = "1dentifier_starting_with_digit";
+        assert_eq!(None, fsm.run(input));
     }
 
     #[test]
     fn test_identifier_conteining_d1gits() {
         let fsm = identifier_fsm();
-        assert_eq!(fsm.run("ident1f1er_cont4ining_d1g1ts"), true);
+        let input = "ident1f1er_cont4ining_d1g1ts";
+        assert_eq!(Some(input), fsm.run(input));
     }
 }
