@@ -53,6 +53,25 @@ pub struct Token<'a> {
     column: usize,
 }
 
+impl std::fmt::Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use TokenType::*;
+        let type_value = match self.ttype {
+            Identifier => format!("Iden({})", self.value),
+            Number => format!("Num({})", self.value),
+            Plus | Minus | Times | Div => format!("ArOp({})", self.value),
+            GreaterThan | GreaterThanOrEqual | LessThan | LessThanOrEqual | Equal => {
+                format!("ComOp({})", self.value)
+            }
+            Assign => format!("Assi({})", self.value),
+            LeftParenthesis | RightParenthesis => format!("Paren({})", self.value),
+            EndOfInput => String::from("EOI"),
+        };
+
+        write!(f, "<{}, {}:{}>", type_value, self.line, self.column)
+    }
+}
+
 pub struct Lexer<'a> {
     input: &'a str,
 
