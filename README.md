@@ -20,6 +20,22 @@ circle_circumference = 2 * pi * radius
 
 ![](lexical_grammar.png)
 
+## Parsing Grammar
+
+```
+Factor 		= <number> | <identifier> | (Expr)
+Term 		= Factor '*' Factor
+	 		= Factor '/' Factor
+LogTerm		= Term '+' Term
+			= Term '-' Term
+RightExpr	= LogTerm '==' LogTerm
+			= LogTerm '<' LogTerm
+			= LogTerm '<=' LogTerm
+			= LogTerm '>' LogTerm
+			= LogTerm '>=' LogTerm
+Expr 		= <identifier> '=' RightExpr
+```
+
 ## Running
 
 ```bash
