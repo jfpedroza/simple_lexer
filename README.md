@@ -26,14 +26,18 @@ circle_circumference = 2 * pi * radius
 Factor 		= <number> | <identifier> | (Expr)
 Term 		= Factor '*' Factor
 	 		= Factor '/' Factor
-LogTerm		= Term '+' Term
+	 		= Factor
+CompTerm    = Term '+' Term
 			= Term '-' Term
-RightExpr	= LogTerm '==' LogTerm
-			= LogTerm '<' LogTerm
-			= LogTerm '<=' LogTerm
-			= LogTerm '>' LogTerm
-			= LogTerm '>=' LogTerm
+			= Term
+RightExpr	= CompTerm '==' CompTerm
+			= CompTerm '<' CompTerm
+			= CompTerm '<=' CompTerm
+			= CompTerm '>' CompTerm
+			= CompTerm '>=' CompTerm
+			= CompTerm
 Expr 		= <identifier> '=' RightExpr
+			= RightExpr
 ```
 
 ## Running
