@@ -7,6 +7,7 @@ fn main() {
 
     match Lexer::new(&input).all_tokens() {
         Ok(tokens) => {
+            println!("Lexer result:");
             for token in &tokens {
                 print!("{} ", token)
             }
@@ -14,7 +15,7 @@ fn main() {
             println!();
 
             match Parser::new(&tokens).parse() {
-                Ok(_) => println!("All good!"),
+                Ok(root) => println!("Parser result: {:?}", root),
                 Err(message) => println!("{}", message),
             }
         }
