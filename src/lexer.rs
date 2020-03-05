@@ -4,8 +4,8 @@ const ARITHMETIC_OPERATORS: &str = "+-*/";
 const COMPARISON_OPERATORS: &str = "=<>";
 
 /// Enumeration of all types of token.
-#[derive(Clone, Eq, PartialEq, Debug)]
-enum TokenType {
+#[derive(Eq, PartialEq, Debug)]
+pub enum TokenType {
     /// Identifiers and literals
     Identifier,
     Number,
@@ -34,23 +34,23 @@ enum TokenType {
     EndOfInput,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct Token<'a> {
     /// - type.   A 'TokenType' corresponding to the type
     ///           of the newly created 'Token'.
-    ttype: TokenType,
+    pub ttype: TokenType,
 
     /// - value.  The 'String' value of the token.
     ///           The actual characters of the lexeme described.
-    value: &'a str,
+    pub value: &'a str,
 
     /// - line.   The line number where the token
     ///           was encountered in the source code.
-    line: usize,
+    pub line: usize,
 
     /// - column. The column number where the token
     ///           was encountered in the source code.
-    column: usize,
+    pub column: usize,
 }
 
 impl std::fmt::Display for Token<'_> {
