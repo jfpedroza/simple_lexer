@@ -4,7 +4,7 @@ const ARITHMETIC_OPERATORS: &str = "+-*/";
 const COMPARISON_OPERATORS: &str = "=<>";
 
 /// Enumeration of all types of token.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum TokenType {
     /// Identifiers and literals
     Identifier,

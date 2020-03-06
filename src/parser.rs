@@ -2,7 +2,7 @@ use crate::lexer::{Token, TokenType};
 
 type Child = Box<ParseNode>;
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 enum NodeType {
     /// Identifiers and literals
     Identifier(String),
@@ -32,7 +32,7 @@ enum NodeType {
 pub struct Location(usize, usize);
 
 // TODO: Write a Display implementation to print the parse tree in a better way
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct ParseNode {
     ntype: NodeType,
     location: Location,
@@ -114,7 +114,7 @@ impl<'a> Parser<'a> {
         self.move_forward(1);
     }
 
-    fn check_current(&mut self, token_type: TokenType, advance: bool) -> OptToken {
+    fn check_current(&mut self, token_type: TokenType, advance: bool) -> OptToken<'a> {
         match self.current() {
             Some(token) if token.ttype == token_type => {
                 if advance {
@@ -139,6 +139,40 @@ impl<'a> Parser<'a> {
             TokenType::Number => NodeType::Number(value.parse().unwrap()),
             _ => panic!(format!(
                 "Token of type {:?} and value '{}' passed to token_to_node",
+                ttype, value
+            )),
+        };
+
+        ParseNode {
+            ntype,
+            location: Location(*line, *column),
+        }
+    }
+
+    fn token_to_bin_op_node(
+        Token {
+            ttype,
+            value,
+            line,
+            column,
+        }: &Token<'_>,
+        left_child: ParseNode,
+        right_child: ParseNode,
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        let ntype = match ttype {
+            TokenType::Plus => NodeType::Sum(left_child, right_child),
+            TokenType::Minus => NodeType::Substraction(left_child, right_child),
+            TokenType::Times => NodeType::Multiplication(left_child, right_child),
+            TokenType::Div => NodeType::Division(left_child, right_child),
+            TokenType::GreaterThan => NodeType::GreaterThan(left_child, right_child),
+            TokenType::GreaterThanOrEqual => NodeType::GreaterThanOrEqual(left_child, right_child),
+            TokenType::LessThan => NodeType::LessThan(left_child, right_child),
+            TokenType::LessThanOrEqual => NodeType::LessThanOrEqual(left_child, right_child),
+            TokenType::Equal => NodeType::Equal(left_child, right_child),
+            _ => panic!(format!(
+                "Token of type {:?} and value '{}' passed to token_to_bin_op_node",
                 ttype, value
             )),
         };
@@ -181,6 +215,12 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn check_current_in_list(&mut self, token_types: &[TokenType], advance: bool) -> OptToken<'a> {
+        token_types
+            .iter()
+            .find_map(|ttype| self.check_current(*ttype, advance))
+    }
+
     fn parse_factor(&mut self) -> ParseResult {
         self.parse_number(true)
             .or_else(|| self.parse_identifier(true))
@@ -188,8 +228,21 @@ impl<'a> Parser<'a> {
             .unwrap_or_else(|| Err(self.create_unexpected_error()))
     }
 
+    fn parse_term(&mut self) -> ParseResult {
+        let node = self.parse_factor()?;
+        let left_child = node.clone();
+        self.check_current_in_list(&[TokenType::Times, TokenType::Div], true)
+            .and_then(|token| {
+                let res = self
+                    .parse_factor()
+                    .map(|right_child| Self::token_to_bin_op_node(token, left_child, right_child));
+                Some(res)
+            })
+            .unwrap_or_else(|| Ok(node))
+    }
+
     fn parse_expr(&mut self) -> ParseResult {
-        self.parse_factor()
+        self.parse_term()
     }
 
     fn create_unexpected_error(&self) -> ParsingError {
