@@ -87,7 +87,15 @@ impl<'a> Parser<'a> {
         }
 
         // TODO: Make it work with multple lines
-        self.parse_expr().map(ParseNode::wrap_in_root)
+        self.parse_expr()
+            .map(ParseNode::wrap_in_root)
+            .and_then(|node| {
+                if self.current().is_none() {
+                    Ok(node)
+                } else {
+                    Err(self.create_unexpected_error())
+                }
+            })
     }
 
     fn current(&self) -> OptToken<'a> {
@@ -355,5 +363,19 @@ mod tests {
             parser.parse_expr()
         );
         assert_eq!(parser.position, 2);
+    }
+
+    #[test]
+    fn test_parse_trailing_token() {
+        let tokens = Lexer::get_tokens("3.14 hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(ParsingError::UnexpectedToken(
+                String::from("hello"),
+                Location(0, 5)
+            )),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 1);
     }
 }
