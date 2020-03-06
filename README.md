@@ -23,21 +23,21 @@ circle_circumference = 2 * pi * radius
 ## Parsing Grammar
 
 ```
-Factor 		= <number> | <identifier> | (Expr)
-Term 		= Factor '*' Factor
-	 		= Factor '/' Factor
-	 		= Factor
+Factor      = <number> | <identifier> | (Expr)
+Term        = Factor '*' Factor
+            = Factor '/' Factor
+            = Factor
 CompTerm    = Term '+' Term
-			= Term '-' Term
-			= Term
-RightExpr	= CompTerm '==' CompTerm
-			= CompTerm '<' CompTerm
-			= CompTerm '<=' CompTerm
-			= CompTerm '>' CompTerm
-			= CompTerm '>=' CompTerm
-			= CompTerm
-Expr 		= <identifier> '=' RightExpr
-			= RightExpr
+            = Term '-' Term
+            = Term
+RightExpr   = CompTerm '==' CompTerm
+            = CompTerm '<' CompTerm
+            = CompTerm '<=' CompTerm
+            = CompTerm '>' CompTerm
+            = CompTerm '>=' CompTerm
+            = CompTerm
+            = <identifier> '=' RightExpr
+            = RightExpr
 ```
 
 ## Running
