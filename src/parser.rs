@@ -29,7 +29,7 @@ enum NodeType {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-struct Location(usize, usize);
+pub struct Location(usize, usize);
 
 #[derive(PartialEq, Debug)]
 pub struct ParseNode {
@@ -46,6 +46,10 @@ pub struct Parser<'a> {
 pub enum ParsingError {
     #[fail(display = "Dummy error")]
     DummyError,
+    #[fail(display = "Unexpected token '{}' at {:?}", _0, _1)]
+    UnexpectedToken(String, Location),
+    #[fail(display = "Unexpected end of line: {:?}", _0)]
+    UnexpectedEndOfLine(Location),
 }
 
 type ParseResult = Result<ParseNode, ParsingError>;
@@ -78,9 +82,8 @@ impl<'a> Parser<'a> {
             return Ok(ParseNode::empty_root());
         }
 
-        self.parse_factor()
-            .map(ParseNode::wrap_in_root)
-            .ok_or(ParsingError::DummyError)
+        // TODO: Make it work with multple lines
+        self.parse_expr().map(ParseNode::wrap_in_root)
     }
 
     fn current(&self) -> OptToken<'a> {
@@ -126,9 +129,42 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_factor(&mut self) -> Option<ParseNode> {
+    fn expect_open_paren(&mut self, advance: bool) -> Option<ParseNode> {
+        self.check_current(
+            TokenType::LeftParenthesis,
+            advance,
+            |Token { value, .. }| NodeType::Identifier(value.to_string()),
+        )
+    }
+
+    fn parse_expr_in_parens(&mut self) -> ParseResult {}
+
+    fn parse_factor(&mut self) -> ParseResult {
         self.parse_number(true)
             .or_else(|| self.parse_identifier(true))
+            .ok_or(self.create_unexpected_error())
+    }
+
+    fn parse_expr(&mut self) -> ParseResult {
+        self.parse_factor()
+    }
+
+    fn create_unexpected_error(&self) -> ParsingError {
+        match self.current() {
+            Some(Token {
+                value,
+                line,
+                column,
+                ..
+            }) => ParsingError::UnexpectedToken(value.to_string(), Location(*line, *column)),
+            None => {
+                let last_token = &self.input[self.position - 1];
+                ParsingError::UnexpectedEndOfLine(Location(
+                    last_token.line,
+                    last_token.column + last_token.value.len() - 1,
+                ))
+            }
+        }
     }
 }
 
@@ -190,9 +226,9 @@ mod tests {
     fn test_parse_factor() {
         let tokens = Lexer::get_tokens("3.14 hello").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(Some(number_node(3.14f64, (0, 0))) == parser.parse_factor());
-        assert!(Some(identifier_node("hello", (0, 5))) == parser.parse_factor());
-        assert!(None == parser.parse_factor());
+        assert!(Ok(number_node(3.14f64, (0, 0))) == parser.parse_factor());
+        assert!(Ok(identifier_node("hello", (0, 5))) == parser.parse_factor());
+        assert!(Err(ParsingError::UnexpectedEndOfLine(Location(0, 9))) == parser.parse_factor());
         assert_eq!(parser.position, 2);
     }
 
@@ -200,8 +236,13 @@ mod tests {
     fn test_parse_factor2() {
         let tokens = Lexer::get_tokens("hello + world").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(Some(identifier_node("hello", (0, 0))) == parser.parse_factor());
-        assert!(None == parser.parse_factor());
+        assert!(Ok(identifier_node("hello", (0, 0))) == parser.parse_factor());
+        assert!(
+            Err(ParsingError::UnexpectedToken(
+                String::from("+"),
+                Location(0, 6)
+            )) == parser.parse_factor()
+        );
         assert_eq!(parser.position, 1);
     }
 }
