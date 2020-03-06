@@ -290,6 +290,10 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
 
+    fn wrap(node: ParseNode) -> ParseNode {
+        ParseNode::wrap_in_root(node)
+    }
+
     fn number_node(num: f64, (line, column): (usize, usize)) -> ParseNode {
         ParseNode {
             ntype: NodeType::Number(num),
@@ -300,6 +304,32 @@ mod tests {
     fn identifier_node(value: &str, (line, column): (usize, usize)) -> ParseNode {
         ParseNode {
             ntype: NodeType::Identifier(String::from(value)),
+            location: Location(line, column),
+        }
+    }
+
+    fn multiplication_node(
+        left_child: ParseNode,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::Multiplication(left_child, right_child),
+            location: Location(line, column),
+        }
+    }
+
+    fn division_node(
+        left_child: ParseNode,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::Division(left_child, right_child),
             location: Location(line, column),
         }
     }
@@ -418,10 +448,6 @@ mod tests {
         assert_eq!(parser.position, 2);
     }
 
-    fn wrap(node: ParseNode) -> ParseNode {
-        ParseNode::wrap_in_root(node)
-    }
-
     #[test]
     fn test_parse_empty_input() {
         let tokens = Lexer::get_tokens("").unwrap();
@@ -455,6 +481,34 @@ mod tests {
         let tokens = Lexer::get_tokens("((3.14))").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(Ok(wrap(number_node(3.14f64, (0, 2)))), parser.parse());
+    }
+
+    #[test]
+    fn test_parse_multiplication() {
+        let tokens = Lexer::get_tokens("3.14 * hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(multiplication_node(
+                number_node(3.14f64, (0, 0)),
+                identifier_node("hello", (0, 7)),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_division() {
+        let tokens = Lexer::get_tokens("3.14 / hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(division_node(
+                number_node(3.14f64, (0, 0)),
+                identifier_node("hello", (0, 7)),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
     }
 
     #[test]
