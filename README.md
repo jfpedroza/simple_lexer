@@ -23,7 +23,7 @@ circle_circumference = 2 * pi * radius
 ## Parsing Grammar
 
 ```
-Factor      = <number> | <identifier> | (Expr)
+Factor      = <number> | <identifier> | '(' Expr ')'
 Term        = Factor '*' Factor
             = Factor '/' Factor
             = Factor

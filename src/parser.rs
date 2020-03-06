@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_expr_in_double_parens() {
-        let tokens = Lexer::get_tokens("((hello))").unwrap();
+        let tokens = Lexer::get_tokens("((hello) )").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(Ok(identifier_node("hello", (0, 2))), parser.parse_expr());
         assert_eq!(parser.position, 5);
