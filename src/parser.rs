@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_number() {
+    fn test_fn_parse_number() {
         let tokens = Lexer::get_tokens("3.14").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_number_non_number() {
+    fn test_fn_parse_number_non_number() {
         let tokens = Lexer::get_tokens("hello").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(None, parser.parse_number(true));
@@ -273,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_identifier() {
+    fn test_fn_parse_identifier() {
         let tokens = Lexer::get_tokens("hello").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_identifier_non_identifier() {
+    fn test_fn_parse_identifier_non_identifier() {
         let tokens = Lexer::get_tokens("3.14").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(None, parser.parse_identifier(true));
@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_factor() {
+    fn test_fn_parse_factor() {
         let tokens = Lexer::get_tokens("3.14 hello").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(Ok(number_node(3.14f64, (0, 0))), parser.parse_factor());
@@ -307,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_factor2() {
+    fn test_fn_parse_factor2() {
         let tokens = Lexer::get_tokens("hello + world").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(Ok(identifier_node("hello", (0, 0))), parser.parse_factor());
@@ -322,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expr_in_parens() {
+    fn test_fn_expr_in_parens() {
         let tokens = Lexer::get_tokens("(hello)").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(Ok(identifier_node("hello", (0, 1))), parser.parse_expr());
@@ -330,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expr_in_double_parens() {
+    fn test_fn_expr_in_double_parens() {
         let tokens = Lexer::get_tokens("((hello) )").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(Ok(identifier_node("hello", (0, 2))), parser.parse_expr());
@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expr_in_unclosed_paren() {
+    fn test_fn_expr_in_unclosed_paren() {
         let tokens = Lexer::get_tokens("(hello").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(
@@ -352,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expr_in_unclosed_paren2() {
+    fn test_fn_expr_in_unclosed_paren2() {
         let tokens = Lexer::get_tokens("(hello j").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(
@@ -363,6 +363,45 @@ mod tests {
             parser.parse_expr()
         );
         assert_eq!(parser.position, 2);
+    }
+
+    fn wrap(node: ParseNode) -> ParseNode {
+        ParseNode::wrap_in_root(node)
+    }
+
+    #[test]
+    fn test_parse_empty_input() {
+        let tokens = Lexer::get_tokens("").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(Ok(ParseNode::empty_root()), parser.parse());
+    }
+
+    #[test]
+    fn test_parse_number() {
+        let tokens = Lexer::get_tokens("3.14").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(Ok(wrap(number_node(3.14f64, (0, 0)))), parser.parse());
+    }
+
+    #[test]
+    fn test_parse_identifier() {
+        let tokens = Lexer::get_tokens("hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(Ok(wrap(identifier_node("hello", (0, 0)))), parser.parse());
+    }
+
+    #[test]
+    fn test_parse_expr_in_parens() {
+        let tokens = Lexer::get_tokens("(hello)").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(Ok(wrap(identifier_node("hello", (0, 1)))), parser.parse());
+    }
+
+    #[test]
+    fn test_parse_expr_in_double_parens() {
+        let tokens = Lexer::get_tokens("((3.14))").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(Ok(wrap(number_node(3.14f64, (0, 2)))), parser.parse());
     }
 
     #[test]
