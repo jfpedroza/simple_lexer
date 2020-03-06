@@ -1,4 +1,4 @@
-use crate::lexer::{Lexer, Token, TokenType};
+use crate::lexer::{Token, TokenType};
 
 type Child = Box<ParseNode>;
 
@@ -31,6 +31,7 @@ enum NodeType {
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Location(usize, usize);
 
+// TODO: Write a Display implementation to print the parse tree in a better way
 #[derive(PartialEq, Debug)]
 pub struct ParseNode {
     ntype: NodeType,
@@ -50,9 +51,12 @@ pub enum ParsingError {
     UnexpectedToken(String, Location),
     #[fail(display = "Unexpected end of line: {:?}", _0)]
     UnexpectedEndOfLine(Location),
+    #[fail(display = "Expected close parenthesis at '{:?}' got {}", _1, _0)]
+    ExpectedCloseParen(String, Location),
 }
 
 type ParseResult = Result<ParseNode, ParsingError>;
+type OptParseResult = Option<ParseResult>;
 type OptToken<'a> = Option<&'a Token<'a>>;
 
 impl ParseNode {
@@ -90,6 +94,10 @@ impl<'a> Parser<'a> {
         self.input.get(self.position)
     }
 
+    fn last_token(&self) -> &'a Token<'a> {
+        &self.input[self.position - 1]
+    }
+
     fn move_forward(&mut self, count: usize) {
         self.position += count;
     }
@@ -98,51 +106,78 @@ impl<'a> Parser<'a> {
         self.move_forward(1);
     }
 
-    fn check_current<F>(&mut self, token_type: TokenType, advance: bool, f: F) -> Option<ParseNode>
-    where
-        F: FnOnce(&Token<'a>) -> NodeType,
-    {
+    fn check_current(&mut self, token_type: TokenType, advance: bool) -> OptToken {
         match self.current() {
             Some(token) if token.ttype == token_type => {
-                let ntype = f(token);
                 if advance {
                     self.advance();
                 }
-                Some(ParseNode {
-                    ntype,
-                    location: Location(token.line, token.column),
-                })
+                Some(token)
             }
             _ => None,
         }
     }
 
-    fn parse_number(&mut self, advance: bool) -> Option<ParseNode> {
-        self.check_current(TokenType::Number, advance, |Token { value, .. }| {
-            NodeType::Number(value.parse().unwrap())
-        })
+    fn token_to_node(
+        Token {
+            ttype,
+            value,
+            line,
+            column,
+        }: &Token<'_>,
+    ) -> ParseNode {
+        let ntype = match ttype {
+            TokenType::Identifier => NodeType::Identifier(value.to_string()),
+            TokenType::Number => NodeType::Number(value.parse().unwrap()),
+            _ => panic!(format!(
+                "Token of type {:?} and value '{}' passed to token_to_node",
+                ttype, value
+            )),
+        };
+
+        ParseNode {
+            ntype,
+            location: Location(*line, *column),
+        }
     }
 
-    fn parse_identifier(&mut self, advance: bool) -> Option<ParseNode> {
-        self.check_current(TokenType::Identifier, advance, |Token { value, .. }| {
-            NodeType::Identifier(value.to_string())
-        })
+    fn parse_number(&mut self, advance: bool) -> OptParseResult {
+        self.check_current(TokenType::Number, advance)
+            .map(Self::token_to_node)
+            .map(Result::Ok)
     }
 
-    fn expect_open_paren(&mut self, advance: bool) -> Option<ParseNode> {
-        self.check_current(
-            TokenType::LeftParenthesis,
-            advance,
-            |Token { value, .. }| NodeType::Identifier(value.to_string()),
-        )
+    fn parse_identifier(&mut self, advance: bool) -> OptParseResult {
+        self.check_current(TokenType::Identifier, advance)
+            .map(Self::token_to_node)
+            .map(Result::Ok)
     }
 
-    fn parse_expr_in_parens(&mut self) -> ParseResult {}
+    fn check_open_paren(&mut self, advance: bool) -> OptToken {
+        self.check_current(TokenType::LeftParenthesis, advance)
+    }
+
+    fn expect_close_paren(&mut self, node: ParseNode) -> ParseResult {
+        self.check_current(TokenType::RightParenthesis, true)
+            .map(|_| node)
+            .ok_or(self.create_close_paren_error())
+    }
+
+    fn parse_expr_in_parens(&mut self, advance: bool) -> OptParseResult {
+        match self.check_open_paren(advance) {
+            Some(_) => Some(
+                self.parse_expr()
+                    .and_then(|node| self.expect_close_paren(node)),
+            ),
+            None => None,
+        }
+    }
 
     fn parse_factor(&mut self) -> ParseResult {
         self.parse_number(true)
             .or_else(|| self.parse_identifier(true))
-            .ok_or(self.create_unexpected_error())
+            .or_else(|| self.parse_expr_in_parens(true))
+            .unwrap_or_else(|| Err(self.create_unexpected_error()))
     }
 
     fn parse_expr(&mut self) -> ParseResult {
@@ -158,11 +193,32 @@ impl<'a> Parser<'a> {
                 ..
             }) => ParsingError::UnexpectedToken(value.to_string(), Location(*line, *column)),
             None => {
-                let last_token = &self.input[self.position - 1];
+                let last_token = self.last_token();
                 ParsingError::UnexpectedEndOfLine(Location(
                     last_token.line,
                     last_token.column + last_token.value.len() - 1,
                 ))
+            }
+        }
+    }
+
+    fn create_close_paren_error(&self) -> ParsingError {
+        match self.current() {
+            Some(Token {
+                value,
+                line,
+                column,
+                ..
+            }) => ParsingError::ExpectedCloseParen(value.to_string(), Location(*line, *column)),
+            None => {
+                let last_token = self.last_token();
+                ParsingError::ExpectedCloseParen(
+                    String::from("EOL"),
+                    Location(
+                        last_token.line,
+                        last_token.column + last_token.value.len() - 1,
+                    ),
+                )
             }
         }
     }
@@ -171,6 +227,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::Lexer;
 
     fn number_node(num: f64, (line, column): (usize, usize)) -> ParseNode {
         ParseNode {
@@ -190,7 +247,10 @@ mod tests {
     fn test_parse_number() {
         let tokens = Lexer::get_tokens("3.14").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(Some(number_node(3.14f64, (0, 0))) == parser.parse_number(true));
+        assert_eq!(
+            Some(Ok(number_node(3.14f64, (0, 0)))),
+            parser.parse_number(true)
+        );
 
         assert_eq!(parser.position, 1);
     }
@@ -199,7 +259,7 @@ mod tests {
     fn test_parse_number_non_number() {
         let tokens = Lexer::get_tokens("hello").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(None == parser.parse_number(true));
+        assert_eq!(None, parser.parse_number(true));
 
         assert_eq!(parser.position, 0);
     }
@@ -208,7 +268,10 @@ mod tests {
     fn test_parse_identifier() {
         let tokens = Lexer::get_tokens("hello").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(Some(identifier_node("hello", (0, 0))) == parser.parse_identifier(true));
+        assert_eq!(
+            Some(Ok(identifier_node("hello", (0, 0)))),
+            parser.parse_identifier(true)
+        );
 
         assert_eq!(parser.position, 1);
     }
@@ -217,7 +280,7 @@ mod tests {
     fn test_parse_identifier_non_identifier() {
         let tokens = Lexer::get_tokens("3.14").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(None == parser.parse_identifier(true));
+        assert_eq!(None, parser.parse_identifier(true));
 
         assert_eq!(parser.position, 0);
     }
@@ -226,9 +289,12 @@ mod tests {
     fn test_parse_factor() {
         let tokens = Lexer::get_tokens("3.14 hello").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(Ok(number_node(3.14f64, (0, 0))) == parser.parse_factor());
-        assert!(Ok(identifier_node("hello", (0, 5))) == parser.parse_factor());
-        assert!(Err(ParsingError::UnexpectedEndOfLine(Location(0, 9))) == parser.parse_factor());
+        assert_eq!(Ok(number_node(3.14f64, (0, 0))), parser.parse_factor());
+        assert_eq!(Ok(identifier_node("hello", (0, 5))), parser.parse_factor());
+        assert_eq!(
+            Err(ParsingError::UnexpectedEndOfLine(Location(0, 9))),
+            parser.parse_factor()
+        );
         assert_eq!(parser.position, 2);
     }
 
@@ -236,13 +302,58 @@ mod tests {
     fn test_parse_factor2() {
         let tokens = Lexer::get_tokens("hello + world").unwrap();
         let mut parser = Parser::new(&tokens);
-        assert!(Ok(identifier_node("hello", (0, 0))) == parser.parse_factor());
-        assert!(
+        assert_eq!(Ok(identifier_node("hello", (0, 0))), parser.parse_factor());
+        assert_eq!(
             Err(ParsingError::UnexpectedToken(
                 String::from("+"),
                 Location(0, 6)
-            )) == parser.parse_factor()
+            )),
+            parser.parse_factor()
         );
         assert_eq!(parser.position, 1);
+    }
+
+    #[test]
+    fn test_expr_in_parens() {
+        let tokens = Lexer::get_tokens("(hello)").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(Ok(identifier_node("hello", (0, 1))), parser.parse_expr());
+        assert_eq!(parser.position, 3);
+    }
+
+    #[test]
+    fn test_expr_in_double_parens() {
+        let tokens = Lexer::get_tokens("((hello))").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(Ok(identifier_node("hello", (0, 2))), parser.parse_expr());
+        assert_eq!(parser.position, 5);
+    }
+
+    #[test]
+    fn test_expr_in_unclosed_paren() {
+        let tokens = Lexer::get_tokens("(hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(ParsingError::ExpectedCloseParen(
+                String::from("EOL"),
+                Location(0, 5)
+            )),
+            parser.parse_expr()
+        );
+        assert_eq!(parser.position, 2);
+    }
+
+    #[test]
+    fn test_expr_in_unclosed_paren2() {
+        let tokens = Lexer::get_tokens("(hello j").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(ParsingError::ExpectedCloseParen(
+                String::from("j"),
+                Location(0, 7)
+            )),
+            parser.parse_expr()
+        );
+        assert_eq!(parser.position, 2);
     }
 }

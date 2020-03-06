@@ -15,7 +15,7 @@ fn main() {
             println!();
 
             match Parser::new(&tokens).parse() {
-                Ok(root) => println!("Parser result: {:?}", root),
+                Ok(root) => println!("Parser result: {:#?}", root),
                 Err(message) => println!("{}", message),
             }
         }
