@@ -36,7 +36,7 @@ RightExpr   = CompTerm '==' CompTerm
             = CompTerm '>' CompTerm
             = CompTerm '>=' CompTerm
             = CompTerm
-            = <identifier> '=' RightExpr
+Expr        = <identifier> '=' RightExpr
             = RightExpr
 ```
 
