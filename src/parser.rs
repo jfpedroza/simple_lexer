@@ -254,8 +254,30 @@ impl<'a> Parser<'a> {
             .unwrap_or_else(|| Ok(node))
     }
 
+    fn parse_right_expr(&mut self) -> ParseResult {
+        let node = self.parse_comp_term()?;
+        let left_child = node.clone();
+        self.check_current_in_list(
+            &[
+                TokenType::GreaterThan,
+                TokenType::GreaterThanOrEqual,
+                TokenType::LessThan,
+                TokenType::LessThanOrEqual,
+                TokenType::Equal,
+            ],
+            true,
+        )
+        .and_then(|token| {
+            let res = self
+                .parse_comp_term()
+                .map(|right_child| Self::token_to_bin_op_node(token, left_child, right_child));
+            Some(res)
+        })
+        .unwrap_or_else(|| Ok(node))
+    }
+
     fn parse_expr(&mut self) -> ParseResult {
-        self.parse_comp_term()
+        self.parse_right_expr()
     }
 
     fn create_unexpected_error(&self) -> ParsingError {
@@ -369,6 +391,71 @@ mod tests {
         let right_child = Box::new(right_child);
         ParseNode {
             ntype: NodeType::Substraction(left_child, right_child),
+            location: Location(line, column),
+        }
+    }
+
+    fn greater_than_node(
+        left_child: ParseNode,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::GreaterThan(left_child, right_child),
+            location: Location(line, column),
+        }
+    }
+
+    fn greater_than_equal_node(
+        left_child: ParseNode,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::GreaterThanOrEqual(left_child, right_child),
+            location: Location(line, column),
+        }
+    }
+
+    fn less_than_node(
+        left_child: ParseNode,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::LessThan(left_child, right_child),
+            location: Location(line, column),
+        }
+    }
+
+    fn less_than_equal_node(
+        left_child: ParseNode,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::LessThanOrEqual(left_child, right_child),
+            location: Location(line, column),
+        }
+    }
+
+    fn equal_node(
+        left_child: ParseNode,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let left_child = Box::new(left_child);
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::Equal(left_child, right_child),
             location: Location(line, column),
         }
     }
@@ -627,6 +714,134 @@ mod tests {
                 ),
                 identifier_node("world", (0, 17)),
                 (0, 15)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_greater_than() {
+        let tokens = Lexer::get_tokens("3.14 > hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(greater_than_node(
+                number_node(3.14f64, (0, 0)),
+                identifier_node("hello", (0, 7)),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_greater_than_equal() {
+        let tokens = Lexer::get_tokens("3.14 >= hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(greater_than_equal_node(
+                number_node(3.14f64, (0, 0)),
+                identifier_node("hello", (0, 8)),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_less_than() {
+        let tokens = Lexer::get_tokens("3.14 < hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(less_than_node(
+                number_node(3.14f64, (0, 0)),
+                identifier_node("hello", (0, 7)),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_less_than_equal() {
+        let tokens = Lexer::get_tokens("3.14 <= hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(less_than_equal_node(
+                number_node(3.14f64, (0, 0)),
+                identifier_node("hello", (0, 8)),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_equal() {
+        let tokens = Lexer::get_tokens("3.14 == hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(equal_node(
+                number_node(3.14f64, (0, 0)),
+                identifier_node("hello", (0, 8)),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_less_than_sum() {
+        let tokens = Lexer::get_tokens("3.14 < hello + world").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(less_than_node(
+                number_node(3.14f64, (0, 0)),
+                sum_node(
+                    identifier_node("hello", (0, 7)),
+                    identifier_node("world", (0, 15)),
+                    (0, 13)
+                ),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_equal_sub_multi() {
+        let tokens = Lexer::get_tokens("3.14 - 2 == hello * world").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(equal_node(
+                substraction_node(
+                    number_node(3.14f64, (0, 0)),
+                    number_node(2f64, (0, 7)),
+                    (0, 5)
+                ),
+                multiplication_node(
+                    identifier_node("hello", (0, 12)),
+                    identifier_node("world", (0, 20)),
+                    (0, 18)
+                ),
+                (0, 9)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_greater_than_sub() {
+        let tokens = Lexer::get_tokens("3.14 >= (hello - world)").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(greater_than_equal_node(
+                number_node(3.14f64, (0, 0)),
+                substraction_node(
+                    identifier_node("hello", (0, 9)),
+                    identifier_node("world", (0, 17)),
+                    (0, 15)
+                ),
+                (0, 5)
             ))),
             parser.parse()
         );
