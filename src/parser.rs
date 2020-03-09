@@ -183,6 +183,37 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn token_to_assignment_node(
+        Token {
+            ttype,
+            value,
+            line,
+            column,
+        }: &Token<'_>,
+        left_child: ParseNode,
+        right_child: ParseNode,
+    ) -> ParseNode {
+        let right_child = Box::new(right_child);
+        let ntype = match (ttype, left_child.ntype) {
+            (TokenType::Assign, NodeType::Identifier(value)) => {
+                NodeType::Assignment(value, right_child)
+            }
+            (TokenType::Assign, ntype) => panic!(format!(
+                "Left node of type {:?} passed to token_to_assignment_node",
+                ntype
+            )),
+            _ => panic!(format!(
+                "Token of type {:?} and value '{}' passed to token_to_assignment_node",
+                ttype, value
+            )),
+        };
+
+        ParseNode {
+            ntype,
+            location: Location(*line, *column),
+        }
+    }
+
     fn parse_number(&mut self, advance: bool) -> OptParseResult {
         self.check_current(TokenType::Number, advance)
             .map(Self::token_to_node)
@@ -219,6 +250,10 @@ impl<'a> Parser<'a> {
         token_types
             .iter()
             .find_map(|ttype| self.check_current(*ttype, advance))
+    }
+
+    fn check_assignment_op(&mut self, advance: bool) -> OptToken {
+        self.check_current(TokenType::Assign, advance)
     }
 
     fn parse_factor(&mut self) -> ParseResult {
@@ -277,7 +312,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> ParseResult {
-        self.parse_right_expr()
+        self.parse_identifier(false)
+            .map(|id_res| {
+                id_res.and_then(|id_node| {
+                    self.check_assignment_op()
+                    self.move_forward(2);
+                    let right_expr = self.parse_right_expr()?;
+                    Ok(Self::token_to_assignment_node(token, id_node, right_expr))
+                })
+            })
+            .unwrap_or_else(|| self.parse_right_expr())
     }
 
     fn create_unexpected_error(&self) -> ParsingError {
