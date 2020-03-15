@@ -98,8 +98,12 @@ impl<'a> Parser<'a> {
             })
     }
 
+    fn look_ahead(&self, count: usize) -> OptToken<'a> {
+        self.input.get(self.position + count)
+    }
+
     fn current(&self) -> OptToken<'a> {
-        self.input.get(self.position)
+        self.look_ahead(0)
     }
 
     fn last_token(&self) -> &'a Token<'a> {
@@ -126,6 +130,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn check_ahead(&self, token_type: TokenType, count: usize) -> OptToken<'a> {
+        match self.look_ahead(count) {
+            Some(token) if token.ttype == token_type => Some(token),
+            _ => None,
+        }
+    }
+
     fn token_to_node(
         Token {
             ttype,
@@ -137,10 +148,10 @@ impl<'a> Parser<'a> {
         let ntype = match ttype {
             TokenType::Identifier => NodeType::Identifier(value.to_string()),
             TokenType::Number => NodeType::Number(value.parse().unwrap()),
-            _ => panic!(format!(
+            _ => panic!(
                 "Token of type {:?} and value '{}' passed to token_to_node",
                 ttype, value
-            )),
+            ),
         };
 
         ParseNode {
@@ -171,10 +182,10 @@ impl<'a> Parser<'a> {
             TokenType::LessThan => NodeType::LessThan(left_child, right_child),
             TokenType::LessThanOrEqual => NodeType::LessThanOrEqual(left_child, right_child),
             TokenType::Equal => NodeType::Equal(left_child, right_child),
-            _ => panic!(format!(
+            _ => panic!(
                 "Token of type {:?} and value '{}' passed to token_to_bin_op_node",
                 ttype, value
-            )),
+            ),
         };
 
         ParseNode {
@@ -198,14 +209,14 @@ impl<'a> Parser<'a> {
             (TokenType::Assign, NodeType::Identifier(value)) => {
                 NodeType::Assignment(value, right_child)
             }
-            (TokenType::Assign, ntype) => panic!(format!(
+            (TokenType::Assign, ntype) => panic!(
                 "Left node of type {:?} passed to token_to_assignment_node",
                 ntype
-            )),
-            _ => panic!(format!(
+            ),
+            _ => panic!(
                 "Token of type {:?} and value '{}' passed to token_to_assignment_node",
                 ttype, value
-            )),
+            ),
         };
 
         ParseNode {
@@ -239,7 +250,7 @@ impl<'a> Parser<'a> {
     fn parse_expr_in_parens(&mut self, advance: bool) -> OptParseResult {
         match self.check_open_paren(advance) {
             Some(_) => Some(
-                self.parse_expr()
+                self.parse_right_expr()
                     .and_then(|node| self.expect_close_paren(node)),
             ),
             None => None,
@@ -252,8 +263,8 @@ impl<'a> Parser<'a> {
             .find_map(|ttype| self.check_current(*ttype, advance))
     }
 
-    fn check_assignment_op(&mut self, advance: bool) -> OptToken {
-        self.check_current(TokenType::Assign, advance)
+    fn check_assignment_op(&self) -> OptToken {
+        self.check_ahead(TokenType::Assign, 1)
     }
 
     fn parse_factor(&mut self) -> ParseResult {
@@ -313,13 +324,28 @@ impl<'a> Parser<'a> {
 
     fn parse_expr(&mut self) -> ParseResult {
         self.parse_identifier(false)
-            .map(|id_res| {
-                id_res.and_then(|id_node| {
-                    self.check_assignment_op()
+            .and_then(Result::ok)
+            .and_then(|id_node| {
+                self.check_assignment_op().map(|assign_token| {
+                    // We have to return an empty node as right expression because `assign_token`
+                    // contains a reference to `self` and it would result in two functions
+                    // referencing `self`.
+                    Self::token_to_assignment_node(assign_token, id_node, ParseNode::empty_root())
+                })
+            })
+            .map(|node| match node {
+                ParseNode {
+                    ntype: NodeType::Assignment(id, _),
+                    location,
+                } => {
                     self.move_forward(2);
                     let right_expr = self.parse_right_expr()?;
-                    Ok(Self::token_to_assignment_node(token, id_node, right_expr))
-                })
+                    Ok(ParseNode {
+                        ntype: NodeType::Assignment(id, Box::new(right_expr)),
+                        location: location,
+                    })
+                }
+                node => panic!("Expected assignment node. Got {:#?}", node),
             })
             .unwrap_or_else(|| self.parse_right_expr())
     }
@@ -500,6 +526,18 @@ mod tests {
         let right_child = Box::new(right_child);
         ParseNode {
             ntype: NodeType::Equal(left_child, right_child),
+            location: Location(line, column),
+        }
+    }
+
+    fn assignment_node(
+        identifier: String,
+        right_child: ParseNode,
+        (line, column): (usize, usize),
+    ) -> ParseNode {
+        let right_child = Box::new(right_child);
+        ParseNode {
+            ntype: NodeType::Assignment(identifier, right_child),
             location: Location(line, column),
         }
     }
@@ -892,6 +930,38 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_assignment() {
+        let tokens = Lexer::get_tokens("pi = 3.14").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(assignment_node(
+                String::from("pi"),
+                number_node(3.14f64, (0, 5)),
+                (0, 3)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
+    fn test_parse_assignment2() {
+        let tokens = Lexer::get_tokens("resp = (hello - world)").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap(assignment_node(
+                String::from("resp"),
+                substraction_node(
+                    identifier_node("hello", (0, 8)),
+                    identifier_node("world", (0, 16)),
+                    (0, 14)
+                ),
+                (0, 5)
+            ))),
+            parser.parse()
+        );
+    }
+
+    #[test]
     fn test_parse_trailing_token() {
         let tokens = Lexer::get_tokens("3.14 hello").unwrap();
         let mut parser = Parser::new(&tokens);
@@ -903,5 +973,16 @@ mod tests {
             parser.parse()
         );
         assert_eq!(parser.position, 1);
+    }
+
+    #[test]
+    fn test_parse_invalid_assignment() {
+        let tokens = Lexer::get_tokens("hello =").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(ParsingError::UnexpectedEndOfLine(Location(0, 6))),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 2);
     }
 }
