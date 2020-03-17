@@ -4,8 +4,8 @@ const ARITHMETIC_OPERATORS: &str = "+-*/";
 const COMPARISON_OPERATORS: &str = "=<>";
 
 /// Enumeration of all types of token.
-#[derive(Clone, Eq, PartialEq, Debug)]
-enum TokenType {
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum TokenType {
     /// Identifiers and literals
     Identifier,
     Number,
@@ -34,23 +34,23 @@ enum TokenType {
     EndOfInput,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct Token<'a> {
     /// - type.   A 'TokenType' corresponding to the type
     ///           of the newly created 'Token'.
-    ttype: TokenType,
+    pub ttype: TokenType,
 
     /// - value.  The 'String' value of the token.
     ///           The actual characters of the lexeme described.
-    value: &'a str,
+    pub value: &'a str,
 
     /// - line.   The line number where the token
     ///           was encountered in the source code.
-    line: usize,
+    pub line: usize,
 
     /// - column. The column number where the token
     ///           was encountered in the source code.
-    column: usize,
+    pub column: usize,
 }
 
 impl std::fmt::Display for Token<'_> {
@@ -84,6 +84,23 @@ pub struct Lexer<'a> {
     column: usize,
 }
 
+#[derive(Debug, PartialEq, Fail)]
+pub enum LexingError {
+    #[fail(
+        display = "Unrecognized character {} at line {} and column {}.",
+        character, line, column
+    )]
+    UnrecognizedCharacter {
+        character: char,
+        line: usize,
+        column: usize,
+    },
+    #[fail(display = "Invalid number at line {} and column {}.", line, column)]
+    InvalidNumber { line: usize, column: usize },
+}
+
+type TokenRes<'a> = Result<Token<'a>, LexingError>;
+
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Lexer {
@@ -95,8 +112,35 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn all_tokens(&mut self) -> Result<Vec<Token<'a>>, LexingError> {
+        let mut tokens: Vec<Token<'a>> = vec![];
+        let mut token_res = self.next_token();
+        loop {
+            match token_res {
+                Ok(Token {
+                    ttype: TokenType::EndOfInput,
+                    ..
+                }) => break,
+                Ok(token) => {
+                    tokens.push(token);
+                    token_res = self.next_token();
+                }
+                Err(error) => {
+                    return Err(error);
+                }
+            }
+        }
+
+        Ok(tokens)
+    }
+
+    pub fn get_tokens(input: &'a str) -> Result<Vec<Token<'a>>, LexingError> {
+        let mut lexer = Lexer::new(input);
+        lexer.all_tokens()
+    }
+
     /// Returns the next recognized 'Token' in the input.
-    fn next_token(&mut self) -> Result<Token<'a>, String> {
+    fn next_token(&mut self) -> TokenRes<'a> {
         // We skip all the whitespaces and new lines in the input.
         self.skip_whitespaces_and_new_lines();
 
@@ -115,66 +159,22 @@ impl<'a> Lexer<'a> {
             Some(&op) if ARITHMETIC_OPERATORS.contains(op) => self.recognize_arithmetic_operator(),
             Some(&op) if COMPARISON_OPERATORS.contains(op) => self.recognize_comparison_operator(),
             Some(character) if character.is_digit(10) => self.recognize_number(),
-            Some(character) => Err(format!(
-                "Unrecognized character {} at line {} and column {}.",
-                character, self.line, self.column
-            )),
-            None => Err(format!(
+            Some(&character) => Err(unrecognized_character(self, character)),
+            None => panic!(
                 "Missing expected character in input at line {} and column {}.",
                 self.line, self.column
-            )),
+            ),
         }
     }
 
-    fn skip_whitespaces_and_new_lines(&mut self) {
-        while let Some(&character) = self.iter.peek() {
-            if !character.is_ascii_whitespace() {
-                break;
-            }
-
-            self.iter.next();
-            self.position += 1;
-
-            if character == '\n' {
-                self.line += 1;
-                self.column = 0;
-            } else {
-                self.column += 1;
-            }
-        }
-    }
-
-    pub fn all_tokens(&mut self) -> Result<Vec<Token<'a>>, String> {
-        let mut tokens: Vec<Result<Token, String>> = vec![];
-        let mut token = self.next_token();
-        loop {
-            match token {
-                Ok(Token {
-                    ttype: TokenType::EndOfInput,
-                    ..
-                }) => break,
-                Ok(_) => {
-                    tokens.push(token);
-                    token = self.next_token();
-                }
-                Err(_) => {
-                    tokens.push(token);
-                    break;
-                }
-            }
-        }
-
-        tokens.iter().cloned().collect()
-    }
-
-    fn expect_next(&mut self, message: &str) -> Result<char, String> {
-        self.iter.next().ok_or(format!(
+    fn expect_next(&mut self, message: &str) -> char {
+        self.iter.next().expect(&format!(
             "Expected {} in input at line {} and column {}.",
             message, self.line, self.column,
         ))
     }
 
-    fn recognize_identifier(&mut self) -> Result<Token<'a>, String> {
+    fn recognize_identifier(&mut self) -> TokenRes<'a> {
         let mut size = 0;
         let line = self.line;
         let column = self.column;
@@ -200,11 +200,10 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    fn recognize_parenthesis(&mut self) -> Result<Token<'a>, String> {
-        let line = self.line;
-        let column = self.column;
+    fn recognize_parenthesis(&mut self) -> TokenRes<'a> {
+        let Self { line, column, .. } = *self;
 
-        let character = self.expect_next("parenthesis")?;
+        let character = self.expect_next("parenthesis");
 
         let (ttype, value) = if character == '(' {
             (TokenType::LeftParenthesis, "(")
@@ -223,31 +222,31 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    fn recognize_arithmetic_operator(&mut self) -> Result<Token<'a>, String> {
+    fn recognize_arithmetic_operator(&mut self) -> TokenRes<'a> {
         let line = self.line;
         let column = self.column;
         let position = self.position;
 
-        self.expect_next("arithmetic operator")?;
+        self.expect_next("arithmetic operator");
         self.position += 1;
         self.column += 1;
 
         let value = &self.input[position..position + 1];
 
         Ok(Token {
-            ttype: Self::match_token_type(value)?,
+            ttype: Self::match_token_type(value),
             value,
             line,
             column,
         })
     }
 
-    fn recognize_comparison_operator(&mut self) -> Result<Token<'a>, String> {
+    fn recognize_comparison_operator(&mut self) -> TokenRes<'a> {
         let line = self.line;
         let column = self.column;
         let position = self.position;
 
-        self.expect_next("comparison operator")?;
+        self.expect_next("comparison operator");
 
         let value = if let Some('=') = self.iter.peek() {
             self.iter.next();
@@ -262,14 +261,14 @@ impl<'a> Lexer<'a> {
         };
 
         Ok(Token {
-            ttype: Self::match_token_type(value)?,
+            ttype: Self::match_token_type(value),
             value,
             line,
             column,
         })
     }
 
-    fn recognize_number(&mut self) -> Result<Token<'a>, String> {
+    fn recognize_number(&mut self) -> TokenRes<'a> {
         let line = self.line;
         let column = self.column;
         let position = self.position;
@@ -292,37 +291,67 @@ impl<'a> Lexer<'a> {
                 column,
             })
         } else {
-            Err(format!(
-                "Invalid number at line {} and column {}.",
-                self.line, self.column
-            ))
+            Err(invalid_number(&self))
         }
     }
 
-    fn match_token_type(value: &str) -> Result<TokenType, String> {
+    fn match_token_type(value: &str) -> TokenType {
         match value {
             // Arithmetic operators
-            "+" => Ok(TokenType::Plus),
-            "-" => Ok(TokenType::Minus),
-            "*" => Ok(TokenType::Times),
-            "/" => Ok(TokenType::Div),
+            "+" => TokenType::Plus,
+            "-" => TokenType::Minus,
+            "*" => TokenType::Times,
+            "/" => TokenType::Div,
 
             // Comparison operators
-            ">" => Ok(TokenType::GreaterThan),
-            ">=" => Ok(TokenType::GreaterThanOrEqual),
-            "<" => Ok(TokenType::LessThan),
-            "<=" => Ok(TokenType::LessThanOrEqual),
-            "==" => Ok(TokenType::Equal),
+            ">" => TokenType::GreaterThan,
+            ">=" => TokenType::GreaterThanOrEqual,
+            "<" => TokenType::LessThan,
+            "<=" => TokenType::LessThanOrEqual,
+            "==" => TokenType::Equal,
 
             // Assignment operator
-            "=" => Ok(TokenType::Assign),
+            "=" => TokenType::Assign,
 
             // Parenthesis
-            "(" => Ok(TokenType::LeftParenthesis),
-            ")" => Ok(TokenType::RightParenthesis),
+            "(" => TokenType::LeftParenthesis,
+            ")" => TokenType::RightParenthesis,
 
-            _ => Err(format!("Operator {} not found in match token type.", value)),
+            _ => panic!("Operator {} not found in match token type.", value),
         }
+    }
+
+    fn skip_whitespaces_and_new_lines(&mut self) {
+        while let Some(&character) = self.iter.peek() {
+            if !character.is_ascii_whitespace() {
+                break;
+            }
+
+            self.iter.next();
+            self.position += 1;
+
+            if character == '\n' {
+                self.line += 1;
+                self.column = 0;
+            } else {
+                self.column += 1;
+            }
+        }
+    }
+}
+
+fn unrecognized_character(lexer: &Lexer, character: char) -> LexingError {
+    LexingError::UnrecognizedCharacter {
+        character,
+        line: lexer.line,
+        column: lexer.column,
+    }
+}
+
+fn invalid_number(lexer: &Lexer) -> LexingError {
+    LexingError::InvalidNumber {
+        line: lexer.line,
+        column: lexer.column,
     }
 }
 
@@ -330,11 +359,11 @@ impl<'a> Lexer<'a> {
 mod tests {
 
     use super::*;
+    use LexingError::*;
 
     #[test]
     fn test_empty_input() {
-        let mut lexer = Lexer::new("");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("");
         assert_eq!(Ok(vec![]), tokens);
     }
 
@@ -349,32 +378,28 @@ mod tests {
 
     #[test]
     fn test_identifier_only_letters() {
-        let mut lexer = Lexer::new("hello");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("hello");
         let expected_token = token_for_identifier("hello", 0);
         assert_eq!(Ok(vec![expected_token]), tokens);
     }
 
     #[test]
     fn test_identifier_with_underscore() {
-        let mut lexer = Lexer::new("hello_world");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("hello_world");
         let expected_token = token_for_identifier("hello_world", 0);
         assert_eq!(Ok(vec![expected_token]), tokens);
     }
 
     #[test]
     fn test_identifier_with_digits() {
-        let mut lexer = Lexer::new("h3ll0");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("h3ll0");
         let expected_token = token_for_identifier("h3ll0", 0);
         assert_eq!(Ok(vec![expected_token]), tokens);
     }
 
     #[test]
     fn test_full_identifier() {
-        let mut lexer = Lexer::new("h3llo_w0rld");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("h3llo_w0rld");
         let expected_token = token_for_identifier("h3llo_w0rld", 0);
         assert_eq!(Ok(vec![expected_token]), tokens);
     }
@@ -399,38 +424,33 @@ mod tests {
 
     #[test]
     fn test_single_left_paren() {
-        let mut lexer = Lexer::new("(");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("(");
         let expected_token = left_paren(0);
         assert_eq!(Ok(vec![expected_token]), tokens);
     }
 
     #[test]
     fn test_single_right_paren() {
-        let mut lexer = Lexer::new(")");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens(")");
         let expected_token = right_paren(0);
         assert_eq!(Ok(vec![expected_token]), tokens);
     }
 
     #[test]
     fn test_couple_paren() {
-        let mut lexer = Lexer::new("()");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("()");
         assert_eq!(Ok(vec![left_paren(0), right_paren(1)]), tokens);
     }
 
     #[test]
     fn test_inverted_couple_paren() {
-        let mut lexer = Lexer::new(")(");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens(")(");
         assert_eq!(Ok(vec![right_paren(0), left_paren(1)]), tokens);
     }
 
     #[test]
     fn test_identifier_inside_paren() {
-        let mut lexer = Lexer::new("(hello_world)");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("(hello_world)");
         assert_eq!(
             Ok(vec![
                 left_paren(0),
@@ -443,8 +463,7 @@ mod tests {
 
     #[test]
     fn test_identifier_then_parens() {
-        let mut lexer = Lexer::new("hello_world()");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("hello_world()");
         assert_eq!(
             Ok(vec![
                 token_for_identifier("hello_world", 0),
@@ -457,8 +476,7 @@ mod tests {
 
     #[test]
     fn test_ident_parens_ident() {
-        let mut lexer = Lexer::new("hello)(world");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("hello)(world");
         assert_eq!(
             Ok(vec![
                 token_for_identifier("hello", 0),
@@ -471,7 +489,7 @@ mod tests {
     }
 
     fn an_operator(op: &str, column: usize) -> (Token, usize) {
-        let ttype = Lexer::match_token_type(op).unwrap();
+        let ttype = Lexer::match_token_type(op);
         let token = Token {
             ttype,
             value: op,
@@ -490,14 +508,12 @@ mod tests {
             .collect::<Vec<_>>();
 
         for op in ops.iter() {
-            let mut lexer = Lexer::new(op);
-            let tokens = lexer.all_tokens();
+            let tokens = Lexer::get_tokens(op);
             let (expected_token, _) = an_operator(op, 0);
             assert_eq!(Ok(vec![expected_token]), tokens);
         }
 
-        let mut lexer = Lexer::new(ARITHMETIC_OPERATORS);
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens(ARITHMETIC_OPERATORS);
         let expected_tokens = ops
             .iter()
             .enumerate()
@@ -523,8 +539,7 @@ mod tests {
         };
 
         for op in ops.iter() {
-            let mut lexer = Lexer::new(op);
-            let tokens = lexer.all_tokens();
+            let tokens = Lexer::get_tokens(op);
             let (expected_token, _) = an_operator(op, 0);
             assert_eq!(Ok(vec![expected_token]), tokens);
         }
@@ -532,8 +547,7 @@ mod tests {
 
     #[test]
     fn test_combination1() {
-        let mut lexer = Lexer::new("=(hello>=<world+");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("=(hello>=<world+");
         assert_eq!(
             Ok(vec![
                 an_operator("=", 0).0,
@@ -563,8 +577,7 @@ mod tests {
     fn test_a_single_number() {
         let numbers = ["5", "2.37", "83e2", "4E57", "91.5e4", "2.83e+3", "3E+7"];
         for number in numbers.iter() {
-            let mut lexer = Lexer::new(number);
-            let tokens = lexer.all_tokens();
+            let tokens = Lexer::get_tokens(number);
             let expected_token = a_number(number, 0).0;
             assert_eq!(Ok(vec![expected_token]), tokens);
         }
@@ -574,19 +587,14 @@ mod tests {
     fn test_invalid_numbers() {
         let numbers = ["2.", "83e", "4E", "91.e4"];
         for number in numbers.iter() {
-            let mut lexer = Lexer::new(number);
-            let tokens = lexer.all_tokens();
-            assert_eq!(
-                Err(format!("Invalid number at line 0 and column 0.")),
-                tokens
-            );
+            let tokens = Lexer::get_tokens(number);
+            assert_eq!(Err(InvalidNumber { line: 0, column: 0 }), tokens);
         }
     }
 
     #[test]
     fn test_combination2() {
-        let mut lexer = Lexer::new("pi=3.1416");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("pi=3.1416");
         assert_eq!(
             Ok(vec![
                 token_for_identifier("pi", 0),
@@ -599,8 +607,7 @@ mod tests {
 
     #[test]
     fn test_combination3() {
-        let mut lexer = Lexer::new("3.1416*7");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("3.1416*7");
         assert_eq!(
             Ok(vec![
                 a_number("3.1416", 0).0,
@@ -613,8 +620,7 @@ mod tests {
 
     #[test]
     fn test_whitespaces1() {
-        let mut lexer = Lexer::new("hello ) ( world  ");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("hello ) ( world  ");
         assert_eq!(
             Ok(vec![
                 token_for_identifier("hello", 0),
@@ -628,8 +634,7 @@ mod tests {
 
     #[test]
     fn test_whitespaces2() {
-        let mut lexer = Lexer::new(" 3.1416\n*\t7");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens(" 3.1416\n*\t7");
         let (t1, t2, t3) = {
             let (t1, _col) = a_number("3.1416", 1);
             let (mut t2, _col) = an_operator("*", 0);
@@ -645,35 +650,33 @@ mod tests {
 
     #[test]
     fn test_error1() {
-        let mut lexer = Lexer::new("invalid_character&");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("invalid_character&");
         assert_eq!(
-            Err(String::from(
-                "Unrecognized character & at line 0 and column 17."
-            )),
+            Err(UnrecognizedCharacter {
+                character: '&',
+                line: 0,
+                column: 17
+            }),
             tokens
         );
     }
 
     #[test]
     fn test_error2() {
-        let mut lexer = Lexer::new("var = 3\npi=3.14.");
-        let tokens = lexer.all_tokens();
+        let tokens = Lexer::get_tokens("var = 3\npi=3.14.");
         assert_eq!(
-            Err(String::from(
-                "Unrecognized character . at line 1 and column 7."
-            )),
+            Err(UnrecognizedCharacter {
+                character: '.',
+                line: 1,
+                column: 7
+            }),
             tokens
         );
     }
 
     #[test]
     fn test_error3() {
-        let mut lexer = Lexer::new("var = 3\npi=3.14e+ - 8");
-        let tokens = lexer.all_tokens();
-        assert_eq!(
-            Err(String::from("Invalid number at line 1 and column 3.")),
-            tokens
-        );
+        let tokens = Lexer::get_tokens("var = 3\npi=3.14e+ - 8");
+        assert_eq!(Err(InvalidNumber { line: 1, column: 3 }), tokens);
     }
 }
