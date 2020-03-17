@@ -39,7 +39,7 @@ pub struct ParseNode {
 }
 
 pub struct Parser<'a> {
-    input: &'a Vec<Token<'a>>,
+    input: &'a [Token<'a>],
     position: usize,
     line: usize,
 }
@@ -66,7 +66,7 @@ impl ParseNode {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(input: &'a Vec<Token<'a>>) -> Self {
+    pub fn new(input: &'a [Token<'a>]) -> Self {
         Parser {
             input,
             position: 0,
@@ -139,23 +139,19 @@ impl<'a> Parser<'a> {
     }
 
     fn move_to_next_line(&mut self) {
-        loop {
-            if let Some(next) = self.input.get(self.position) {
-                if next.line == self.line {
-                    break;
-                } else {
-                    self.position += 1;
-                }
-            } else {
+        while let Some(next) = self.input.get(self.position) {
+            if next.line == self.line {
                 break;
+            } else {
+                self.position += 1;
             }
         }
     }
 
     fn look_ahead(&self, count: usize) -> OptToken<'a> {
-        self.input.get(self.position + count).filter(|token| {
-            return token.line == self.line;
-        })
+        self.input
+            .get(self.position + count)
+            .filter(|token| token.line == self.line)
     }
 
     fn current(&self) -> OptToken<'a> {
@@ -201,6 +197,7 @@ impl<'a> Parser<'a> {
             column,
         }: &Token<'_>,
     ) -> ParseNode {
+        let value = *value;
         let ntype = match ttype {
             TokenType::Identifier => NodeType::Identifier(value.to_string()),
             TokenType::Number => NodeType::Number(value.parse().unwrap()),
@@ -300,7 +297,7 @@ impl<'a> Parser<'a> {
     fn expect_close_paren(&mut self, node: ParseNode) -> ParseResult {
         self.check_current(TokenType::RightParenthesis, true)
             .map(|_| node)
-            .ok_or(self.create_close_paren_error())
+            .ok_or_else(|| self.create_close_paren_error())
     }
 
     fn parse_expr_in_parens(&mut self, advance: bool) -> OptParseResult {
@@ -398,7 +395,7 @@ impl<'a> Parser<'a> {
                     let right_expr = self.parse_right_expr()?;
                     Ok(ParseNode {
                         ntype: NodeType::Assignment(id, Box::new(right_expr)),
-                        location: location,
+                        location,
                     })
                 }
                 node => panic!("Expected assignment node. Got {:#?}", node),
@@ -413,7 +410,7 @@ impl<'a> Parser<'a> {
                 line,
                 column,
                 ..
-            }) => ParsingError::UnexpectedToken(value.to_string(), Location(*line, *column)),
+            }) => ParsingError::UnexpectedToken((*value).to_string(), Location(*line, *column)),
             None => {
                 let last_token = self.last_token();
                 ParsingError::UnexpectedEndOfLine(Location(
@@ -431,7 +428,7 @@ impl<'a> Parser<'a> {
                 line,
                 column,
                 ..
-            }) => ParsingError::ExpectedCloseParen(value.to_string(), Location(*line, *column)),
+            }) => ParsingError::ExpectedCloseParen((*value).to_string(), Location(*line, *column)),
             None => {
                 let last_token = self.last_token();
                 ParsingError::ExpectedCloseParen(

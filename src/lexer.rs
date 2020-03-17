@@ -168,10 +168,12 @@ impl<'a> Lexer<'a> {
     }
 
     fn expect_next(&mut self, message: &str) -> char {
-        self.iter.next().expect(&format!(
-            "Expected {} in input at line {} and column {}.",
-            message, self.line, self.column,
-        ))
+        self.iter.next().unwrap_or_else(|| {
+            panic!(
+                "Expected {} in input at line {} and column {}.",
+                message, self.line, self.column,
+            )
+        })
     }
 
     fn recognize_identifier(&mut self) -> TokenRes<'a> {
@@ -216,7 +218,7 @@ impl<'a> Lexer<'a> {
 
         Ok(Token {
             ttype,
-            value: value,
+            value,
             line,
             column,
         })
