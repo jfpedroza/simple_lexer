@@ -132,27 +132,22 @@ impl<'a> Parser<'a> {
                 }
             })
             .map_err(|err| {
-                self.move_to_next_line();
                 self.line += 1;
+                self.move_to_next_line();
                 err
             })
     }
 
     fn move_to_next_line(&mut self) {
-        if let Some(current) = self.input.get(self.position) {
-            let mut position = self.position + 1;
-            loop {
-                if let Some(next) = self.input.get(position) {
-                    if next.line == current.line {
-                        position += 1;
-                    } else {
-                        self.position = position;
-                        break;
-                    }
-                } else {
-                    self.position = position;
+        loop {
+            if let Some(next) = self.input.get(self.position) {
+                if next.line == self.line {
                     break;
+                } else {
+                    self.position += 1;
                 }
+            } else {
+                break;
             }
         }
     }
@@ -483,6 +478,13 @@ mod tests {
     fn wrap(node: ParseNode) -> ParseNode {
         ParseNode {
             ntype: NodeType::Root(vec![node]),
+            location: Location(0, 0),
+        }
+    }
+
+    fn wrap2(node1: ParseNode, node2: ParseNode) -> ParseNode {
+        ParseNode {
+            ntype: NodeType::Root(vec![node1, node2]),
             location: Location(0, 0),
         }
     }
@@ -1049,8 +1051,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_parse_multiple_lines() {
+        let tokens = Lexer::get_tokens("resp = (hello - world)\n3.14 == hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap2(
+                assignment_node(
+                    String::from("resp"),
+                    substraction_node(
+                        identifier_node("hello", (0, 8)),
+                        identifier_node("world", (0, 16)),
+                        (0, 14)
+                    ),
+                    (0, 5)
+                ),
+                equal_node(
+                    number_node(3.14f64, (1, 0)),
+                    identifier_node("hello", (1, 8)),
+                    (1, 5)
+                )
+            )),
+            parser.parse()
+        );
+    }
+
     fn wrap_err(error: ParsingError) -> ParsingError {
         ParsingError::MultipleErrors(vec![error])
+    }
+
+    fn wrap_err2(error1: ParsingError, error2: ParsingError) -> ParsingError {
+        ParsingError::MultipleErrors(vec![error1, error2])
     }
 
     #[test]
@@ -1076,5 +1107,41 @@ mod tests {
             parser.parse()
         );
         assert_eq!(parser.position, 2);
+    }
+
+    #[test]
+    fn test_parse_invalid_multiple_lines() {
+        let tokens = Lexer::get_tokens("hello =\n2").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(wrap_err(ParsingError::UnexpectedEndOfLine(Location(0, 6)))),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 3);
+    }
+
+    #[test]
+    fn test_parse_invalid_multiple_lines2() {
+        let tokens = Lexer::get_tokens("2\nhello =").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(wrap_err(ParsingError::UnexpectedEndOfLine(Location(1, 6)))),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 3);
+    }
+
+    #[test]
+    fn test_parse_invalid_multiple_lines3() {
+        let tokens = Lexer::get_tokens("hello =\n=").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(wrap_err2(
+                ParsingError::UnexpectedEndOfLine(Location(0, 6)),
+                ParsingError::UnexpectedToken(String::from("="), Location(1, 0))
+            )),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 3);
     }
 }
