@@ -42,10 +42,15 @@ Expr        = <identifier> '=' RightExpr
 
 ## Running
 
-```bash
-$ cargo run -- "Hello - 3"
-<Iden(Hello), 0:0> <ArOp(-), 0:6> <Num(3), 0:8>
-```
+    $ cargo run -- "Hello - 3"
+    Lexer result:
+    <Iden(Hello), 0:0> <ArOp(-), 0:6> <Num(3), 0:8>
+    Parser result:
+    Root [0:0]>
+     Substraction [0:6]>
+      Hello [0:0]
+      3 [0:8]
+
 
 Tests:
 

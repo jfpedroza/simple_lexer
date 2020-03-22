@@ -1,4 +1,5 @@
 use crate::lexer::{Token, TokenType};
+use std::fmt::{Display, Formatter};
 
 type Child = Box<ParseNode>;
 
@@ -31,7 +32,6 @@ enum NodeType {
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Location(usize, usize);
 
-// TODO: Write a Display implementation to print the parse tree in a better way
 #[derive(Clone, PartialEq, Debug)]
 pub struct ParseNode {
     ntype: NodeType,
@@ -55,6 +55,7 @@ pub enum ParsingError {
 type ParseResult = Result<ParseNode, ParsingError>;
 type OptParseResult = Option<ParseResult>;
 type OptToken<'a> = Option<&'a Token<'a>>;
+type FmtResult = std::fmt::Result;
 
 impl ParseNode {
     fn empty_root() -> Self {
@@ -62,6 +63,66 @@ impl ParseNode {
             ntype: NodeType::Root(vec![]),
             location: Location(0, 0),
         }
+    }
+
+    fn internal_fmt(&self, f: &mut Formatter<'_>, depth: usize) -> FmtResult {
+        use NodeType::*;
+        let depth_str = vec![" "; depth].join("");
+        if depth > 0 {
+            write!(f, "\n{}", depth_str)?;
+        }
+
+        let mut fmt_with_nodes = |name: &str, nodes: &[&ParseNode]| -> FmtResult {
+            write!(f, "{} [{}:{}]>", name, self.location.0, self.location.1)?;
+            nodes
+                .iter()
+                .map(|&node| node.internal_fmt(f, depth + 1))
+                .collect()
+        };
+
+        match &self.ntype {
+            Root(nodes) => fmt_with_nodes("Root", &nodes.iter().collect::<Vec<_>>()),
+            Number(num) => write!(f, "{} [{}:{}]", num, self.location.0, self.location.1),
+            Identifier(identifier) => write!(
+                f,
+                "{} [{}:{}]",
+                identifier, self.location.0, self.location.1
+            ),
+            Sum(left_child, right_child) => fmt_with_nodes("Sum", &[left_child, right_child]),
+            Substraction(left_child, right_child) => {
+                fmt_with_nodes("Substraction", &[left_child, right_child])
+            }
+            Multiplication(left_child, right_child) => {
+                fmt_with_nodes("Multiplication", &[left_child, right_child])
+            }
+            Division(left_child, right_child) => {
+                fmt_with_nodes("Division", &[left_child, right_child])
+            }
+            GreaterThan(left_child, right_child) => {
+                fmt_with_nodes("GreaterThan", &[left_child, right_child])
+            }
+            GreaterThanOrEqual(left_child, right_child) => {
+                fmt_with_nodes("GreaterThanOrEqual", &[left_child, right_child])
+            }
+            LessThan(left_child, right_child) => {
+                fmt_with_nodes("LessThan", &[left_child, right_child])
+            }
+            LessThanOrEqual(left_child, right_child) => {
+                fmt_with_nodes("LessThanOrEqual", &[left_child, right_child])
+            }
+            Equal(left_child, right_child) => fmt_with_nodes("Equal", &[left_child, right_child]),
+            Assignment(identifier, right_child) => {
+                writeln!(f, "Assignment>")?;
+                write!(f, "{} {}", depth_str, identifier)?;
+                right_child.internal_fmt(f, depth + 1)
+            }
+        }
+    }
+}
+
+impl Display for ParseNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        self.internal_fmt(f, 0)
     }
 }
 

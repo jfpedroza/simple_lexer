@@ -20,7 +20,7 @@ fn main() {
         .and_then(|tokens| Parser::new(&tokens).parse().map_err(|err| err.to_string()));
 
     match result {
-        Ok(root) => println!("Parser result: {:#?}", root),
+        Ok(root) => println!("Parser result:\n{}", root),
         Err(err) => {
             eprintln!("{}", err);
             std::process::exit(1)
