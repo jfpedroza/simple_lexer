@@ -372,34 +372,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_right_expr(&mut self) -> ParseResult {
-        let mut node = self.parse_comp_term()?;
-        loop {
-            let left_child = &node;
-            let res = self
-                .check_current_in_list(
-                    &[
-                        TokenType::GreaterThan,
-                        TokenType::GreaterThanOrEqual,
-                        TokenType::LessThan,
-                        TokenType::LessThanOrEqual,
-                        TokenType::Equal,
-                    ],
-                    true,
-                )
-                .and_then(|token| {
-                    let res = self.parse_comp_term().map(|right_child| {
-                        Self::token_to_bin_op_node(token, left_child.clone(), right_child)
-                    });
-                    Some(res)
-                });
-
-            match res {
-                Some(new_node) => node = new_node?,
-                None => break,
-            }
-        }
-
-        Ok(node)
+        let node = self.parse_comp_term()?;
+        let left_child = &node;
+        self.check_current_in_list(
+            &[
+                TokenType::GreaterThan,
+                TokenType::GreaterThanOrEqual,
+                TokenType::LessThan,
+                TokenType::LessThanOrEqual,
+                TokenType::Equal,
+            ],
+            true,
+        )
+        .and_then(|token| {
+            let res = self.parse_comp_term().map(|right_child| {
+                Self::token_to_bin_op_node(token, left_child.clone(), right_child)
+            });
+            Some(res)
+        })
+        .unwrap_or_else(|| Ok(node))
     }
 
     fn parse_expr(&mut self) -> ParseResult {
