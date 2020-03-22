@@ -328,34 +328,52 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_term(&mut self) -> ParseResult {
-        let node = self.parse_factor()?;
-        let left_child = node.clone();
-        self.check_current_in_list(&[TokenType::Times, TokenType::Div], true)
-            .and_then(|token| {
-                let res = self
-                    .parse_factor()
-                    .map(|right_child| Self::token_to_bin_op_node(token, left_child, right_child));
-                Some(res)
-            })
-            .unwrap_or_else(|| Ok(node))
+        let mut node = self.parse_factor()?;
+        loop {
+            let left_child = &node;
+            let res = self
+                .check_current_in_list(&[TokenType::Times, TokenType::Div], true)
+                .and_then(|token| {
+                    let res = self.parse_factor().map(|right_child| {
+                        Self::token_to_bin_op_node(token, left_child.clone(), right_child)
+                    });
+                    Some(res)
+                });
+
+            match res {
+                Some(new_node) => node = new_node?,
+                None => break,
+            }
+        }
+
+        Ok(node)
     }
 
     fn parse_comp_term(&mut self) -> ParseResult {
-        let node = self.parse_term()?;
-        let left_child = node.clone();
-        self.check_current_in_list(&[TokenType::Plus, TokenType::Minus], true)
-            .and_then(|token| {
-                let res = self
-                    .parse_term()
-                    .map(|right_child| Self::token_to_bin_op_node(token, left_child, right_child));
-                Some(res)
-            })
-            .unwrap_or_else(|| Ok(node))
+        let mut node = self.parse_term()?;
+        loop {
+            let left_child = &node;
+            let res = self
+                .check_current_in_list(&[TokenType::Plus, TokenType::Minus], true)
+                .and_then(|token| {
+                    let res = self.parse_term().map(|right_child| {
+                        Self::token_to_bin_op_node(token, left_child.clone(), right_child)
+                    });
+                    Some(res)
+                });
+
+            match res {
+                Some(new_node) => node = new_node?,
+                None => break,
+            }
+        }
+
+        Ok(node)
     }
 
     fn parse_right_expr(&mut self) -> ParseResult {
         let node = self.parse_comp_term()?;
-        let left_child = node.clone();
+        let left_child = &node;
         self.check_current_in_list(
             &[
                 TokenType::GreaterThan,
@@ -367,9 +385,9 @@ impl<'a> Parser<'a> {
             true,
         )
         .and_then(|token| {
-            let res = self
-                .parse_comp_term()
-                .map(|right_child| Self::token_to_bin_op_node(token, left_child, right_child));
+            let res = self.parse_comp_term().map(|right_child| {
+                Self::token_to_bin_op_node(token, left_child.clone(), right_child)
+            });
             Some(res)
         })
         .unwrap_or_else(|| Ok(node))
