@@ -5,20 +5,25 @@ use simple_lexer::*;
 fn main() {
     let input = std::env::args().skip(1).collect::<Vec<_>>().join("\n");
 
-    match Lexer::new(&input).all_tokens() {
-        Ok(tokens) => {
+    let result = Lexer::new(&input)
+        .all_tokens()
+        .map(|tokens| {
             println!("Lexer result:");
-            for token in &tokens {
+            for token in tokens.iter() {
                 print!("{} ", token)
             }
 
             println!();
+            tokens
+        })
+        .map_err(|err| err.to_string())
+        .and_then(|tokens| Parser::new(&tokens).parse().map_err(|err| err.to_string()));
 
-            match Parser::new(&tokens).parse() {
-                Ok(root) => println!("Parser result: {:#?}", root),
-                Err(message) => println!("{}", message),
-            }
+    match result {
+        Ok(root) => println!("Parser result: {:#?}", root),
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(1)
         }
-        Err(message) => println!("{}", message),
     }
 }

@@ -39,20 +39,17 @@ pub struct ParseNode {
 }
 
 pub struct Parser<'a> {
-    input: &'a Vec<Token<'a>>,
+    input: &'a [Token<'a>],
     position: usize,
+    line: usize,
 }
 
 #[derive(Debug, PartialEq, Fail)]
 pub enum ParsingError {
-    #[fail(display = "Dummy error")]
-    DummyError,
-    #[fail(display = "Unexpected token '{}' at {:?}", _0, _1)]
     UnexpectedToken(String, Location),
-    #[fail(display = "Unexpected end of line: {:?}", _0)]
     UnexpectedEndOfLine(Location),
-    #[fail(display = "Expected close parenthesis at '{:?}' got {}", _1, _0)]
     ExpectedCloseParen(String, Location),
+    MultipleErrors(Vec<ParsingError>),
 }
 
 type ParseResult = Result<ParseNode, ParsingError>;
@@ -66,19 +63,15 @@ impl ParseNode {
             location: Location(0, 0),
         }
     }
-
-    fn wrap_in_root(node: Self) -> Self {
-        let location = node.location;
-        ParseNode {
-            ntype: NodeType::Root(vec![node]),
-            location: location,
-        }
-    }
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(input: &'a Vec<Token<'a>>) -> Self {
-        Parser { input, position: 0 }
+    pub fn new(input: &'a [Token<'a>]) -> Self {
+        Parser {
+            input,
+            position: 0,
+            line: 0,
+        }
     }
 
     pub fn parse(&mut self) -> ParseResult {
@@ -86,20 +79,79 @@ impl<'a> Parser<'a> {
             return Ok(ParseNode::empty_root());
         }
 
-        // TODO: Make it work with multple lines
+        let lines = self.input.last().map(|token| token.line).unwrap();
+
+        let mut results = Vec::with_capacity(lines);
+
+        loop {
+            let result = self.parse_line();
+            results.push(result);
+            if self.position >= self.input.len() {
+                break;
+            }
+        }
+
+        results
+            .into_iter()
+            .fold(Ok(ParseNode::empty_root()), |result, line_result| {
+                match (result, line_result) {
+                    (
+                        Ok(ParseNode {
+                            ntype: NodeType::Root(mut nodes),
+                            location,
+                        }),
+                        Ok(node),
+                    ) => {
+                        nodes.push(node);
+                        Ok(ParseNode {
+                            ntype: NodeType::Root(nodes),
+                            location,
+                        })
+                    }
+                    (Ok(_), Err(err)) => Err(ParsingError::MultipleErrors(vec![err])),
+                    (Err(error), Ok(_)) => Err(error),
+                    (Err(ParsingError::MultipleErrors(mut errors)), Err(err)) => {
+                        errors.push(err);
+                        Err(ParsingError::MultipleErrors(errors))
+                    }
+                    (result, line_result) => {
+                        panic!("Unexpected tuple {:#?} and {:#?}", result, line_result)
+                    }
+                }
+            })
+    }
+
+    fn parse_line(&mut self) -> ParseResult {
         self.parse_expr()
-            .map(ParseNode::wrap_in_root)
             .and_then(|node| {
                 if self.current().is_none() {
+                    self.line += 1;
                     Ok(node)
                 } else {
                     Err(self.create_unexpected_error())
                 }
             })
+            .map_err(|err| {
+                self.line += 1;
+                self.move_to_next_line();
+                err
+            })
+    }
+
+    fn move_to_next_line(&mut self) {
+        while let Some(next) = self.input.get(self.position) {
+            if next.line == self.line {
+                break;
+            } else {
+                self.position += 1;
+            }
+        }
     }
 
     fn look_ahead(&self, count: usize) -> OptToken<'a> {
-        self.input.get(self.position + count)
+        self.input
+            .get(self.position + count)
+            .filter(|token| token.line == self.line)
     }
 
     fn current(&self) -> OptToken<'a> {
@@ -145,6 +197,7 @@ impl<'a> Parser<'a> {
             column,
         }: &Token<'_>,
     ) -> ParseNode {
+        let value = *value;
         let ntype = match ttype {
             TokenType::Identifier => NodeType::Identifier(value.to_string()),
             TokenType::Number => NodeType::Number(value.parse().unwrap()),
@@ -244,7 +297,7 @@ impl<'a> Parser<'a> {
     fn expect_close_paren(&mut self, node: ParseNode) -> ParseResult {
         self.check_current(TokenType::RightParenthesis, true)
             .map(|_| node)
-            .ok_or(self.create_close_paren_error())
+            .ok_or_else(|| self.create_close_paren_error())
     }
 
     fn parse_expr_in_parens(&mut self, advance: bool) -> OptParseResult {
@@ -342,7 +395,7 @@ impl<'a> Parser<'a> {
                     let right_expr = self.parse_right_expr()?;
                     Ok(ParseNode {
                         ntype: NodeType::Assignment(id, Box::new(right_expr)),
-                        location: location,
+                        location,
                     })
                 }
                 node => panic!("Expected assignment node. Got {:#?}", node),
@@ -357,7 +410,7 @@ impl<'a> Parser<'a> {
                 line,
                 column,
                 ..
-            }) => ParsingError::UnexpectedToken(value.to_string(), Location(*line, *column)),
+            }) => ParsingError::UnexpectedToken((*value).to_string(), Location(*line, *column)),
             None => {
                 let last_token = self.last_token();
                 ParsingError::UnexpectedEndOfLine(Location(
@@ -375,7 +428,7 @@ impl<'a> Parser<'a> {
                 line,
                 column,
                 ..
-            }) => ParsingError::ExpectedCloseParen(value.to_string(), Location(*line, *column)),
+            }) => ParsingError::ExpectedCloseParen((*value).to_string(), Location(*line, *column)),
             None => {
                 let last_token = self.last_token();
                 ParsingError::ExpectedCloseParen(
@@ -390,13 +443,47 @@ impl<'a> Parser<'a> {
     }
 }
 
+impl std::fmt::Display for ParsingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use ParsingError::*;
+        match self {
+            UnexpectedToken(token, location) => {
+                write!(f, "Unexpected token '{}' at {:?}", token, location)
+            }
+            UnexpectedEndOfLine(location) => write!(f, "Unexpected end of line: {:?}", location),
+            ExpectedCloseParen(token, location) => write!(
+                f,
+                "Expected close parenthesis at '{:?}' got {}",
+                location, token
+            ),
+            MultipleErrors(errors) => {
+                for error in errors {
+                    writeln!(f, "{}", error)?;
+                }
+
+                Ok(())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::lexer::Lexer;
 
     fn wrap(node: ParseNode) -> ParseNode {
-        ParseNode::wrap_in_root(node)
+        ParseNode {
+            ntype: NodeType::Root(vec![node]),
+            location: Location(0, 0),
+        }
+    }
+
+    fn wrap2(node1: ParseNode, node2: ParseNode) -> ParseNode {
+        ParseNode {
+            ntype: NodeType::Root(vec![node1, node2]),
+            location: Location(0, 0),
+        }
     }
 
     fn number_node(num: f64, (line, column): (usize, usize)) -> ParseNode {
@@ -962,17 +1049,50 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_multiple_lines() {
+        let tokens = Lexer::get_tokens("resp = (hello - world)\n3.14 == hello").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Ok(wrap2(
+                assignment_node(
+                    String::from("resp"),
+                    substraction_node(
+                        identifier_node("hello", (0, 8)),
+                        identifier_node("world", (0, 16)),
+                        (0, 14)
+                    ),
+                    (0, 5)
+                ),
+                equal_node(
+                    number_node(3.14f64, (1, 0)),
+                    identifier_node("hello", (1, 8)),
+                    (1, 5)
+                )
+            )),
+            parser.parse()
+        );
+    }
+
+    fn wrap_err(error: ParsingError) -> ParsingError {
+        ParsingError::MultipleErrors(vec![error])
+    }
+
+    fn wrap_err2(error1: ParsingError, error2: ParsingError) -> ParsingError {
+        ParsingError::MultipleErrors(vec![error1, error2])
+    }
+
+    #[test]
     fn test_parse_trailing_token() {
         let tokens = Lexer::get_tokens("3.14 hello").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(
-            Err(ParsingError::UnexpectedToken(
+            Err(wrap_err(ParsingError::UnexpectedToken(
                 String::from("hello"),
                 Location(0, 5)
-            )),
+            ))),
             parser.parse()
         );
-        assert_eq!(parser.position, 1);
+        assert_eq!(parser.position, 2);
     }
 
     #[test]
@@ -980,9 +1100,45 @@ mod tests {
         let tokens = Lexer::get_tokens("hello =").unwrap();
         let mut parser = Parser::new(&tokens);
         assert_eq!(
-            Err(ParsingError::UnexpectedEndOfLine(Location(0, 6))),
+            Err(wrap_err(ParsingError::UnexpectedEndOfLine(Location(0, 6)))),
             parser.parse()
         );
         assert_eq!(parser.position, 2);
+    }
+
+    #[test]
+    fn test_parse_invalid_multiple_lines() {
+        let tokens = Lexer::get_tokens("hello =\n2").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(wrap_err(ParsingError::UnexpectedEndOfLine(Location(0, 6)))),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 3);
+    }
+
+    #[test]
+    fn test_parse_invalid_multiple_lines2() {
+        let tokens = Lexer::get_tokens("2\nhello =").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(wrap_err(ParsingError::UnexpectedEndOfLine(Location(1, 6)))),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 3);
+    }
+
+    #[test]
+    fn test_parse_invalid_multiple_lines3() {
+        let tokens = Lexer::get_tokens("hello =\n=").unwrap();
+        let mut parser = Parser::new(&tokens);
+        assert_eq!(
+            Err(wrap_err2(
+                ParsingError::UnexpectedEndOfLine(Location(0, 6)),
+                ParsingError::UnexpectedToken(String::from("="), Location(1, 0))
+            )),
+            parser.parse()
+        );
+        assert_eq!(parser.position, 3);
     }
 }
