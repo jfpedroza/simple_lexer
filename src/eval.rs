@@ -1,5 +1,6 @@
 use crate::parser::{Location, NodeType, ParseNode};
 use std::collections::HashMap;
+use std::f64::EPSILON;
 
 #[derive(Debug, PartialEq, Fail)]
 pub enum EvalError {
@@ -31,7 +32,9 @@ impl EvalContext {
             }
             LessThan(left, right) => self.perform_comparison_op(left, right, |l, r| l < r),
             LessThanOrEqual(left, right) => self.perform_comparison_op(left, right, |l, r| l <= r),
-            Equal(left, right) => self.perform_comparison_op(left, right, |l, r| l == r),
+            Equal(left, right) => {
+                self.perform_comparison_op(left, right, |l, r| (l - r).abs() < EPSILON)
+            }
             Assignment(identifier, right) => {
                 let val = self.eval(right)?;
                 self.syms.insert(identifier.clone(), (val, node.location.0));
