@@ -11,7 +11,7 @@ pub enum EvalError {
 }
 
 type EvalResult = Result<f64, EvalError>;
-type SymbolTable = HashMap<String, (f64, usize)>;
+type SymbolTable = HashMap<String, f64>;
 
 pub struct EvalContext {
     syms: SymbolTable,
@@ -37,13 +37,13 @@ impl EvalContext {
             }
             Assignment(identifier, right) => {
                 let val = self.eval(right)?;
-                self.syms.insert(identifier.clone(), (val, node.location.0));
+                self.syms.insert(identifier.clone(), val);
                 Ok(val)
             }
             Identifier(identifier) => self
                 .syms
                 .get(identifier)
-                .map(|(val, _line)| *val)
+                .map(|val| *val)
                 .ok_or_else(|| EvalError::SymbolNotFound(identifier.clone(), node.location)),
             _ => Err(EvalError::Unimplemented(format!(
                 "Eval for type {:?}",
@@ -61,6 +61,10 @@ impl EvalContext {
         let mut ctx = EvalContext {
             syms: HashMap::new(),
         };
+
+        ctx.populate_symbol_table();
+
+        println!();
 
         for node in nodes {
             let res = ctx.eval(node)?;
@@ -97,5 +101,9 @@ impl EvalContext {
         let right_res = self.eval(&right_child)?;
         let res = op(left_res, right_res);
         Ok(if res { 1.0 } else { 0.0 })
+    }
+
+    fn populate_symbol_table(&mut self) {
+        self.syms.insert(String::from("PI"), std::f64::consts::PI);
     }
 }
