@@ -43,7 +43,7 @@ impl EvalContext {
             Identifier(identifier) => self
                 .syms
                 .get(identifier)
-                .map(|val| *val)
+                .copied()
                 .ok_or_else(|| EvalError::SymbolNotFound(identifier.clone(), node.location)),
             _ => Err(EvalError::Unimplemented(format!(
                 "Eval for type {:?}",
