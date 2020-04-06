@@ -18,6 +18,18 @@ pub struct EvalContext {
 }
 
 impl EvalContext {
+    pub fn new() -> Self {
+        EvalContext {
+            syms: HashMap::new(),
+        }
+    }
+
+    pub fn populated() -> Self {
+        let mut ctx = Self::new();
+        ctx.populate_symbol_table();
+        ctx
+    }
+
     pub fn eval(&mut self, node: &ParseNode) -> EvalResult {
         use NodeType::*;
         match &node.ntype {
@@ -58,11 +70,7 @@ impl EvalContext {
             _ => panic!("Expected Root node, got {:?}", root),
         };
 
-        let mut ctx = EvalContext {
-            syms: HashMap::new(),
-        };
-
-        ctx.populate_symbol_table();
+        let mut ctx = Self::populated();
 
         println!();
 
@@ -105,5 +113,58 @@ impl EvalContext {
 
     fn populate_symbol_table(&mut self) {
         self.syms.insert(String::from("PI"), std::f64::consts::PI);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::{NodeType, Parser};
+
+    fn eval(input: &str) -> EvalResult {
+        let tokens = Lexer::get_tokens(input).unwrap();
+        let mut parser = Parser::new(&tokens);
+        let root = parser.parse().unwrap();
+        let node = if let NodeType::Root(nodes) = &root.ntype {
+            &nodes[0]
+        } else {
+            panic!("Parse result should always be a Root node");
+        };
+
+        let mut ctx = EvalContext::populated();
+        ctx.eval(node)
+    }
+
+    fn assert_res(lhs: EvalResult, rhs: EvalResult) {
+        match (lhs, rhs) {
+            (Ok(a), Ok(b)) => assert!((a - b).abs() <= EPSILON),
+            (lhs, rhs) => assert_eq!(lhs, rhs),
+        }
+    }
+
+    #[test]
+    fn test_eval_number() {
+        assert_res(eval("3.2"), Ok(3.2));
+    }
+
+    #[test]
+    fn test_eval_sum() {
+        assert_res(eval("3.2 + 2.0"), Ok(5.2));
+    }
+
+    #[test]
+    fn test_eval_substraction() {
+        assert_res(eval("3.2 - 2.0"), Ok(1.2));
+    }
+
+    #[test]
+    fn test_eval_multiplication() {
+        assert_res(eval("3.2 * 2.0"), Ok(6.4));
+    }
+
+    #[test]
+    fn test_eval_division() {
+        assert_res(eval("3.2 / 2.0"), Ok(1.6));
     }
 }
