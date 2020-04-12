@@ -167,4 +167,54 @@ mod tests {
     fn test_eval_division() {
         assert_res(eval("3.2 / 2.0"), Ok(1.6));
     }
+
+    #[test]
+    fn test_eval_greater_than() {
+        assert_res(eval("3.2 > 2.0"), Ok(1.0));
+    }
+
+    #[test]
+    fn test_eval_greater_than_false() {
+        assert_res(eval("3.2 > 5.0"), Ok(0.0));
+    }
+
+    #[test]
+    fn test_eval_greater_or_equal_than() {
+        assert_res(eval("3.2 >= 2.0"), Ok(1.0));
+    }
+
+    #[test]
+    fn test_eval_greater_or_equal_than_false() {
+        assert_res(eval("3.2 >= 5.0"), Ok(0.0));
+    }
+
+    #[test]
+    fn test_eval_less_than() {
+        assert_res(eval("3.2 < 4.0"), Ok(1.0));
+    }
+
+    #[test]
+    fn test_eval_less_than_false() {
+        assert_res(eval("3.2 < 1.0"), Ok(0.0));
+    }
+
+    #[test]
+    fn test_eval_less_or_equal_than() {
+        assert_res(eval("3.2 <= 4.0"), Ok(1.0));
+    }
+
+    #[test]
+    fn test_eval_less_or_equal_than_false() {
+        assert_res(eval("3.2 <= 1.0"), Ok(0.0));
+    }
+
+    #[test]
+    fn test_eval_equal() {
+        assert_res(eval("3.2 == 3.2"), Ok(1.0));
+    }
+
+    #[test]
+    fn test_eval_equal_false() {
+        assert_res(eval("3.2 == 5.0"), Ok(0.0));
+    }
 }
