@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 type Child = Box<ParseNode>;
 
 #[derive(Clone, PartialEq, Debug)]
-enum NodeType {
+pub enum NodeType {
     /// Identifiers and literals
     Identifier(String),
     Number(f64),
@@ -30,12 +30,12 @@ enum NodeType {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Location(usize, usize);
+pub struct Location(pub usize, pub usize);
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ParseNode {
-    ntype: NodeType,
-    location: Location,
+    pub ntype: NodeType,
+    pub location: Location,
 }
 
 pub struct Parser<'a> {

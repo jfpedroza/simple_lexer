@@ -42,14 +42,17 @@ Expr        = <identifier> '=' RightExpr
 
 ## Running
 
-    $ cargo run -- "Hello - 3"
+    $ cargo run -- "PI - 3"
     Lexer result:
-    <Iden(Hello), 0:0> <ArOp(-), 0:6> <Num(3), 0:8>
+    <Iden(PI), 0:0> <ArOp(-), 0:3> <Num(3), 0:5>
+
     Parser result:
     Root [0:0]>
-     Substraction [0:6]>
-      Hello [0:0]
-      3 [0:8]
+     Substraction [0:3]>
+      PI [0:0]
+      3 [0:5]
+
+    0.14159265358979312
 
 
 Tests:

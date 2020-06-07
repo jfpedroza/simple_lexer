@@ -17,10 +17,15 @@ fn main() {
             tokens
         })
         .map_err(|err| err.to_string())
-        .and_then(|tokens| Parser::new(&tokens).parse().map_err(|err| err.to_string()));
+        .and_then(|tokens| Parser::new(&tokens).parse().map_err(|err| err.to_string()))
+        .map(|root| {
+            println!("\nParser result:\n{}", root);
+            root
+        })
+        .and_then(|root| EvalContext::eval_and_print(&root).map_err(|err| err.to_string()));
 
     match result {
-        Ok(root) => println!("Parser result:\n{}", root),
+        Ok(()) => {}
         Err(err) => {
             eprintln!("{}", err);
             std::process::exit(1)
