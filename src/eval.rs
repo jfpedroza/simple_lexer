@@ -33,6 +33,14 @@ impl EvalContext {
     pub fn eval(&mut self, node: &ParseNode) -> EvalResult {
         use NodeType::*;
         match &node.ntype {
+            Root(nodes) => {
+                let mut res = None;
+                for node in nodes {
+                    res = Some(self.eval(node)?);
+                }
+
+                Ok(res.unwrap())
+            }
             Number(num) => Ok(*num),
             Sum(left, right) => self.perform_arithmetic_op(left, right, |l, r| l + r),
             Substraction(left, right) => self.perform_arithmetic_op(left, right, |l, r| l - r),
@@ -57,10 +65,6 @@ impl EvalContext {
                 .get(identifier)
                 .copied()
                 .ok_or_else(|| EvalError::SymbolNotFound(identifier.clone(), node.location)),
-            _ => Err(EvalError::Unimplemented(format!(
-                "Eval for type {:?}",
-                node.ntype
-            ))),
         }
     }
 
@@ -126,8 +130,8 @@ mod tests {
         let tokens = Lexer::get_tokens(input).unwrap();
         let mut parser = Parser::new(&tokens);
         let root = parser.parse().unwrap();
-        let node = if let NodeType::Root(nodes) = &root.ntype {
-            &nodes[0]
+        let node = if let NodeType::Root(_) = &root.ntype {
+            &root
         } else {
             panic!("Parse result should always be a Root node");
         };
@@ -216,5 +220,29 @@ mod tests {
     #[test]
     fn test_eval_equal_false() {
         assert_res(eval("3.2 == 5.0"), Ok(0.0));
+    }
+
+    #[test]
+    fn test_eval_pi() {
+        assert_res(eval("PI >= 3.14159265358979312"), Ok(1.0));
+    }
+
+    #[test]
+    fn test_assinment() {
+        assert_res(eval("hello = 5.0"), Ok(5.0));
+    }
+
+    #[test]
+    fn test_assinment2() {
+        assert_res(eval("hello = 5.0\n2.3 + hello"), Ok(7.3));
+    }
+
+    #[test]
+    fn test_nested() {
+        assert_res(eval("(6 * 5) / 4 + 2"), Ok(9.5));
+        assert_res(eval("(2 * 5) / 3 - 2"), Ok(1.33333333333333333));
+        assert_res(eval("(6 * 5) / 4 + (8 * PI)"), Ok(32.632741228718345));
+        assert_res(eval("(6 * 5) / 4 + (8 * PI) > 32"), Ok(1.0));
+        assert_res(eval("(((((3)))))"), Ok(3.0));
     }
 }
